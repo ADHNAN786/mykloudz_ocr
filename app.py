@@ -145,7 +145,7 @@ CRITICAL EXTRACTION RULES:
      * Items Value: Enter ONLY the service fee / total charges incurred by the company (e.g. 'Total Charges: 30.00' representing SIF creation charges + payroll charges). DO NOT enter the disbursed salary amount (e.g., ignore the 2,700.00 salary)!
      * VAT Amount: Enter the VAT on charges (e.g. 'VAT @5%: 1.50').
      * Total Value: Enter the total charges plus VAT (e.g. 30.00 + 1.50 = 31.50).
-     * Remarks: Note the salary period if visible (e.g. 'Salary Period: APR 2026').
+     * Remarks: Leave empty ("").
 
 7. Description for Normal Invoices / Receipts / Vouchers:
    - Extract all line item names/descriptions and join them with newline characters ('\\n') into a single text.
@@ -159,6 +159,9 @@ CRITICAL EXTRACTION RULES:
 10. Total Value:
    - Grand total payable including VAT.
 
+11. Remarks:
+   - Always return as an empty string (""). This column is kept empty for manual entry/updation by the user.
+
 UAE TAX INVOICE & EXPENSE EXTRACTION GUIDELINES & FEW-SHOT EXAMPLES:
 
 Case 1: Commercial Supplies Invoice (e.g. Party Time Trading LLC)
@@ -170,6 +173,7 @@ Case 1: Commercial Supplies Invoice (e.g. Party Time Trading LLC)
 - Taxable Amount (Items Value): 137.00
 - VAT 5% (VAT Amount): 6.85
 - Grand Total (Total Value): 143.85
+- Remarks: ""
 
 Case 2: Money Exchange / WPS Salary Receipt (e.g. Al Ansari Exchange)
 - Document Title: WPS - SIF CREATION RECEIPT
@@ -180,7 +184,7 @@ Case 2: Money Exchange / WPS Salary Receipt (e.g. Al Ansari Exchange)
 - Items Value: Total Charges only (e.g. 30.00), excluding salary amount (e.g. 2,700.00)
 - VAT Amount: 1.50
 - Total Value: 31.50 (Charges + VAT)
-- Remarks: 'Salary Period: APR 2026'
+- Remarks: ""
 
 Case 3: Retail Thermal Receipt (e.g. ZSH Golden Day Hypermarket LLC)
 - Document Title: TAX INVOICE (Thermal)
@@ -191,7 +195,7 @@ Case 3: Retail Thermal Receipt (e.g. ZSH Golden Day Hypermarket LLC)
 - Items Value: 7.61
 - VAT Amount: 0.38
 - Total Value: 7.99
-- Remarks: 'Bill Amount: 7.99'
+- Remarks: ""
 
 Case 4: Payment Voucher / Unnumbered Receipt (e.g. Alaa Mustafa Restaurant)
 - Document Title: PAYMENT VOUCHER
@@ -202,7 +206,7 @@ Case 4: Payment Voucher / Unnumbered Receipt (e.g. Alaa Mustafa Restaurant)
 - Items Value: 522.00
 - VAT Amount: 0.00
 - Total Value: 522.00
-- Remarks: 'Payment Voucher - Cash payment to Playpoint'
+- Remarks: ""
 
 Case 5: Bookshop / Stationery Invoice (e.g. Dar Al Foqahaa Bookshop LLC)
 - Document Title: Tax Invoice
@@ -213,6 +217,7 @@ Case 5: Bookshop / Stationery Invoice (e.g. Dar Al Foqahaa Bookshop LLC)
 - Items Value: 46.19
 - VAT Amount: 2.31
 - Total Value: 48.50
+- Remarks: ""
 
 Case 6: Department Store / Supermarket (e.g. Department Store LLC / Shopee)
 - Document Title: Tax Invoice
@@ -223,6 +228,7 @@ Case 6: Department Store / Supermarket (e.g. Department Store LLC / Shopee)
 - Items Value: 20.22
 - VAT Amount: 1.01
 - Total Value: 21.25
+- Remarks: ""
 
 GENERAL EXTRACTION STANDARDS:
 - Standardize all dates to DD/MM/YYYY.
@@ -243,7 +249,7 @@ Example output:
     "vat_amount": 0.38,
     "items_value": 7.61,
     "total_value": 7.99,
-    "remarks": "Bill Amount: 7.99"
+    "remarks": ""
   }
 ]
 """
@@ -354,8 +360,8 @@ def standardize_invoice_record(inv: dict, idx: int, filename: str) -> dict:
     except Exception:
         items_val = round(tot_val - vat_val, 2)
 
-    # 9. Remarks
-    remarks = str(inv.get("remarks") or "").strip()
+    # 9. Remarks (Always kept empty for manual entry/updation)
+    remarks = ""
 
     # --- SPECIAL POST-PROCESSING FOR AL ANSARI EXCHANGE / WPS RECEIPTS ---
     is_wps = (
@@ -394,7 +400,7 @@ def standardize_invoice_record(inv: dict, idx: int, filename: str) -> dict:
         "VAT Amount": round(vat_val, 2),
         "Items Value": round(items_val, 2),
         "Total Value": round(tot_val, 2),
-        "remarks": remarks,
+        "remarks": "",
         "Source File": filename
     }
 
