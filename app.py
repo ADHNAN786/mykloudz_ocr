@@ -22,6 +22,7 @@ import pandas as pd
 from PIL import Image
 from pypdf import PdfReader
 import anthropic
+import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -123,8 +124,10 @@ CRITICAL EXTRACTION RULES:
    - Extract the SELLER / VENDOR / ISSUING BUSINESS NAME (typically at the very top, logo, or header, e.g. 'ZSH GOLDEN DAY', 'ALAA MUSTAFA RESTAURANT', 'AL ANSARI EXCHANGE', 'SANDERSONS RESTAURANT LLC').
    - DO NOT extract the buyer/customer (ignore 'Bill To', 'Delivered To', 'Customer', 'Payee Name: Playpoint', 'Cash Customer').
 
-3. TRN (Tax Registration Number):
-   - Must be the 15-digit Tax Registration Number of the SELLER (look for 'TRN', 'TRN Number', 'Tax Reg No', or 'الرقم الضريبي').
+3. TRN (Tax Registration Number) - EXACT 15 DIGITS REQUIRED:
+   - In the UAE, the Tax Registration Number is ALWAYS exactly 15 numeric digits (e.g. 100032997700003, 104995981800003, 100584651200003, 100018902500003).
+   - Look for 'TRN', 'TRN Number', 'Tax Reg No', or 'الرقم الضريبي'.
+   - CAREFULLY count and transcribe all 15 digits. NEVER omit, skip, or drop digits in the middle.
    - For Al Ansari Exchange: Look at top left 'Tax Reg. No.: 100032997700003'. Do NOT take Till or A/C numbers.
    - If no valid TRN exists on the document (e.g. unnumbered internal vouchers), return 'NA'.
 
@@ -136,8 +139,11 @@ CRITICAL EXTRACTION RULES:
    - NEVER extract Till numbers, M# numbers, Clerk numbers, or phone numbers.
    - If no explicit bill, invoice, or voucher number exists on the document (e.g., payment voucher without a number), you MUST set 'invoice_number': 'NA'.
 
-5. Invoice Date:
-   - Extract the invoice date and format strictly as DD/MM/YYYY (e.g., '25-Jul-2026' -> '25/07/2026', '28/07/2026' -> '28/07/2026', '15-May-2026' -> '15/05/2026').
+5. Invoice Date - TRANSACTION DATE ONLY:
+   - Extract the primary transaction / issue date printed on the invoice header or cash register receipt.
+   - NEVER confuse the document issue date with text dates written in line item descriptions (e.g. if item description says '2025 August 23', but receipt was issued on '27/05/2026', the invoice date is 27/05/2026).
+   - Inspect day, month, and year digits closely (do NOT misread '27/05' as '28/09').
+   - Format strictly as DD/MM/YYYY (e.g., '27/05/2026', '15/05/2026', '25/07/2026').
 
 6. Description & Items Value FOR WPS / SIF / SALARY PAYMENT RECEIPTS (e.g. Al Ansari Exchange):
    - When the receipt is for WPS / SIF salary processing ('WPS - SIF CREATION RECEIPT' or similar):
@@ -295,7 +301,7 @@ def standardize_invoice_record(inv: dict, idx: int, filename: str) -> dict:
     # 1. Invoice Date
     date_val = str(inv.get("invoice_date") or inv.get("date") or "").strip()
     clean_date = date_val
-    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%B %d, %Y", "%b %d, %Y"):
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%y", "%d-%m-%y", "%d.%m.%Y", "%d.%m.%y", "%d-%b-%Y", "%d %b %Y", "%B %d, %Y", "%b %d, %Y", "%d-%b-%y", "%d %b %y"):
         try:
             dt = datetime.strptime(date_val.replace(".", "/").strip(), fmt)
             clean_date = dt.strftime("%d/%m/%Y")
@@ -406,76 +412,257 @@ def standardize_invoice_record(inv: dict, idx: int, filename: str) -> dict:
 
 
 def format_excel(df: pd.DataFrame) -> bytes:
-    """Generate cleanly formatted Excel (.xlsx) file matching the exact column layout and widths."""
+    """Generate cleanly formatted Excel (.xlsx) file with two distinct sections:
+    1. Standard-Rated Input Tax (VAT Amount > 0)
+    2. Zero Rated Input Tax (VAT Amount == 0)
+    """
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="mykloudz Expenses")
-        worksheet = writer.sheets["mykloudz Expenses"]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "mykloudz Expenses"
 
-        # mykloudz corporate styling
-        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
-        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        regular_font = Font(name="Calibri", size=10)
-        thin_border = Border(
-            left=Side(style="thin", color="D3D3D3"),
-            right=Side(style="thin", color="D3D3D3"),
-            top=Side(style="thin", color="D3D3D3"),
-            bottom=Side(style="thin", color="D3D3D3")
-        )
-        center_align = Alignment(horizontal="center", vertical="center")
-        left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
-        right_align = Alignment(horizontal="right", vertical="center")
+    # Styling definitions
+    section_std_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")  # Dark Slate
+    section_zero_fill = PatternFill(start_color="334155", end_color="334155", fill_type="solid") # Slate
+    header_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")       # Light Slate/Gray
+    subtotal_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
 
-        col_widths = {
-            "S.No": 8,
-            "Invoice Date": 14,
-            "Invoice Number": 18,
-            "TRN": 22,
-            "Company Name": 30,
-            "Description": 45,
-            "VAT Amount": 14,
-            "Items Value": 14,
-            "Total Value": 15,
-            "remarks": 18,
-            "Source File": 25
-        }
+    section_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_font = Font(name="Calibri", size=10, bold=True, color="1E293B")
+    regular_font = Font(name="Calibri", size=10, color="000000")
+    subtotal_font = Font(name="Calibri", size=10, bold=True, color="1E293B")
 
-        # Format Header Row
-        for cell in worksheet[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = center_align
+    thin_border = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="thin", color="CBD5E1")
+    )
+    subtotal_border = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="1E293B"),
+        bottom=Side(style="double", color="1E293B")
+    )
 
-        # Format Data Rows
-        headers = [c.value for c in worksheet[1]]
-        for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=1, max_col=worksheet.max_column):
-            for col_idx, cell in enumerate(row):
-                cell.font = regular_font
-                cell.border = thin_border
-                col_name = headers[col_idx]
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    right_align = Alignment(horizontal="right", vertical="center")
+    section_align = Alignment(horizontal="left", vertical="center", indent=1)
 
+    display_cols = [
+        "S.No",
+        "Invoice Date",
+        "Invoice Number",
+        "TRN",
+        "Company Name",
+        "Description",
+        "VAT Amount",
+        "Items Value",
+        "Total Value",
+        "remarks",
+        "Source File",
+    ]
+
+    # Ensure all columns exist in df
+    clean_df = df.copy()
+    for col in display_cols:
+        if col not in clean_df.columns:
+            clean_df[col] = ""
+
+    # Partition by VAT Amount > 0 vs == 0
+    vat_numeric = pd.to_numeric(clean_df["VAT Amount"], errors="coerce").fillna(0.0)
+    std_df = clean_df[vat_numeric > 0].copy()
+    zero_df = clean_df[vat_numeric <= 0].copy()
+
+    current_row = 1
+
+    # --- SECTION 1: Standard-Rated Input Tax ---
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(display_cols))
+    sec1_cell = ws.cell(row=current_row, column=1, value="Standard-Rated Input Tax")
+    sec1_cell.fill = section_std_fill
+    sec1_cell.font = section_font
+    sec1_cell.alignment = section_align
+    ws.row_dimensions[current_row].height = 26
+    current_row += 1
+
+    # Column Headers for Section 1
+    for col_idx, col_name in enumerate(display_cols, start=1):
+        c = ws.cell(row=current_row, column=col_idx, value=col_name)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = center_align
+        c.border = thin_border
+    ws.row_dimensions[current_row].height = 22
+    current_row += 1
+
+    # Data Rows for Section 1
+    std_start_row = current_row
+    if not std_df.empty:
+        for _, row in std_df.iterrows():
+            ws.row_dimensions[current_row].height = 20
+            for col_idx, col_name in enumerate(display_cols, start=1):
+                val = row.get(col_name, "")
+                c = ws.cell(row=current_row, column=col_idx, value=val)
+                c.font = regular_font
+                c.border = thin_border
                 if col_name in ["S.No", "Invoice Date", "Invoice Number"]:
-                    cell.alignment = center_align
+                    c.alignment = center_align
                 elif col_name == "TRN":
-                    cell.alignment = center_align
-                    cell.number_format = "@"  # Text format ensures 15-digit TRNs are never converted to scientific notation
-                    if cell.value is not None:
-                        cell.value = str(cell.value)
+                    c.alignment = center_align
+                    c.number_format = "@"
+                    if val is not None:
+                        c.value = str(val)
                 elif col_name in ["VAT Amount", "Items Value", "Total Value"]:
-                    cell.alignment = right_align
-                    cell.number_format = "#,##0.00"
+                    c.alignment = right_align
+                    c.number_format = "#,##0.00"
+                    try:
+                        c.value = float(str(val).replace(",", "").strip())
+                    except Exception:
+                        pass
                 else:
-                    cell.alignment = left_align
+                    c.alignment = left_align
+            current_row += 1
+        std_end_row = current_row - 1
 
-        # Set specific column widths
-        for col in worksheet.columns:
-            header_name = col[0].value
-            col_letter = get_column_letter(col[0].column)
-            if header_name in col_widths:
-                worksheet.column_dimensions[col_letter].width = col_widths[header_name]
-            else:
-                worksheet.column_dimensions[col_letter].width = 16
+        # Subtotal Row for Standard-Rated
+        ws.row_dimensions[current_row].height = 22
+        for col_idx in range(1, len(display_cols) + 1):
+            c = ws.cell(row=current_row, column=col_idx)
+            c.fill = subtotal_fill
+            c.border = subtotal_border
+            c.font = subtotal_font
 
+        ws.cell(row=current_row, column=5, value="Total Standard-Rated").alignment = right_align
+        vat_col_letter = get_column_letter(7)
+        items_col_letter = get_column_letter(8)
+        tot_col_letter = get_column_letter(9)
+
+        c_vat = ws.cell(row=current_row, column=7, value=f"=SUM({vat_col_letter}{std_start_row}:{vat_col_letter}{std_end_row})")
+        c_vat.alignment = right_align
+        c_vat.number_format = "#,##0.00"
+
+        c_items = ws.cell(row=current_row, column=8, value=f"=SUM({items_col_letter}{std_start_row}:{items_col_letter}{std_end_row})")
+        c_items.alignment = right_align
+        c_items.number_format = "#,##0.00"
+
+        c_tot = ws.cell(row=current_row, column=9, value=f"=SUM({tot_col_letter}{std_start_row}:{tot_col_letter}{std_end_row})")
+        c_tot.alignment = right_align
+        c_tot.number_format = "#,##0.00"
+
+        current_row += 1
+    else:
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(display_cols))
+        c = ws.cell(row=current_row, column=1, value="No Standard-Rated (taxable) invoices in this batch.")
+        c.font = regular_font
+        c.alignment = center_align
+        c.border = thin_border
+        current_row += 1
+
+    # Blank Spacing Row
+    current_row += 1
+
+    # --- SECTION 2: Zero Rated Input Tax ---
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(display_cols))
+    sec2_cell = ws.cell(row=current_row, column=1, value="Zero Rated Input Tax")
+    sec2_cell.fill = section_zero_fill
+    sec2_cell.font = section_font
+    sec2_cell.alignment = section_align
+    ws.row_dimensions[current_row].height = 26
+    current_row += 1
+
+    # Column Headers for Section 2
+    for col_idx, col_name in enumerate(display_cols, start=1):
+        c = ws.cell(row=current_row, column=col_idx, value=col_name)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = center_align
+        c.border = thin_border
+    ws.row_dimensions[current_row].height = 22
+    current_row += 1
+
+    # Data Rows for Section 2
+    zero_start_row = current_row
+    if not zero_df.empty:
+        for _, row in zero_df.iterrows():
+            ws.row_dimensions[current_row].height = 20
+            for col_idx, col_name in enumerate(display_cols, start=1):
+                val = row.get(col_name, "")
+                c = ws.cell(row=current_row, column=col_idx, value=val)
+                c.font = regular_font
+                c.border = thin_border
+                if col_name in ["S.No", "Invoice Date", "Invoice Number"]:
+                    c.alignment = center_align
+                elif col_name == "TRN":
+                    c.alignment = center_align
+                    c.number_format = "@"
+                    if val is not None:
+                        c.value = str(val)
+                elif col_name in ["VAT Amount", "Items Value", "Total Value"]:
+                    c.alignment = right_align
+                    c.number_format = "#,##0.00"
+                    try:
+                        c.value = float(str(val).replace(",", "").strip())
+                    except Exception:
+                        pass
+                else:
+                    c.alignment = left_align
+            current_row += 1
+        zero_end_row = current_row - 1
+
+        # Subtotal Row for Zero-Rated
+        ws.row_dimensions[current_row].height = 22
+        for col_idx in range(1, len(display_cols) + 1):
+            c = ws.cell(row=current_row, column=col_idx)
+            c.fill = subtotal_fill
+            c.border = subtotal_border
+            c.font = subtotal_font
+
+        ws.cell(row=current_row, column=5, value="Total Zero-Rated").alignment = right_align
+        vat_col_letter = get_column_letter(7)
+        items_col_letter = get_column_letter(8)
+        tot_col_letter = get_column_letter(9)
+
+        c_vat = ws.cell(row=current_row, column=7, value=f"=SUM({vat_col_letter}{zero_start_row}:{vat_col_letter}{zero_end_row})")
+        c_vat.alignment = right_align
+        c_vat.number_format = "#,##0.00"
+
+        c_items = ws.cell(row=current_row, column=8, value=f"=SUM({items_col_letter}{zero_start_row}:{items_col_letter}{zero_end_row})")
+        c_items.alignment = right_align
+        c_items.number_format = "#,##0.00"
+
+        c_tot = ws.cell(row=current_row, column=9, value=f"=SUM({tot_col_letter}{zero_start_row}:{tot_col_letter}{zero_end_row})")
+        c_tot.alignment = right_align
+        c_tot.number_format = "#,##0.00"
+
+        current_row += 1
+    else:
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(display_cols))
+        c = ws.cell(row=current_row, column=1, value="No Zero-Rated (exempt) invoices in this batch.")
+        c.font = regular_font
+        c.alignment = center_align
+        c.border = thin_border
+        current_row += 1
+
+    # Column widths
+    col_widths = {
+        "S.No": 8,
+        "Invoice Date": 14,
+        "Invoice Number": 18,
+        "TRN": 22,
+        "Company Name": 32,
+        "Description": 45,
+        "VAT Amount": 14,
+        "Items Value": 15,
+        "Total Value": 16,
+        "remarks": 18,
+        "Source File": 25,
+    }
+    for col_idx, col_name in enumerate(display_cols, start=1):
+        col_letter = get_column_letter(col_idx)
+        ws.column_dimensions[col_letter].width = col_widths.get(col_name, 16)
+
+    wb.save(output)
     return output.getvalue()
 
 
@@ -483,8 +670,8 @@ def format_excel(df: pd.DataFrame) -> bytes:
 def get_available_models(api_key: str) -> List[str]:
     """Dynamically fetch authorized models from Anthropic API for this key."""
     default_models = [
-        "claude-haiku-4-5-20251001",
         "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
         "claude-sonnet-4-6",
         "claude-sonnet-5",
     ]
@@ -496,8 +683,8 @@ def get_available_models(api_key: str) -> List[str]:
         fetched = [m.id for m in resp.data if hasattr(m, "id")]
         
         recommended_priority = [
-            "claude-haiku-4-5-20251001",
             "claude-sonnet-4-5-20250929",
+            "claude-haiku-4-5-20251001",
             "claude-sonnet-4-6",
             "claude-sonnet-5",
         ]
@@ -534,8 +721,8 @@ def process_file_with_claude(
     def _call_api_with_fallback(content_blocks, selected_model):
         models_to_try = [selected_model]
         fallbacks = [
-            "claude-haiku-4-5-20251001",
             "claude-sonnet-4-5-20250929",
+            "claude-haiku-4-5-20251001",
             "claude-sonnet-4-6",
             "claude-sonnet-5",
         ]
@@ -600,9 +787,9 @@ def process_file_with_claude(
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
 
-        # View 1: Original
+        # View 1: Original (high quality, no chroma subsampling to keep small text sharp)
         buf_orig = io.BytesIO()
-        img.save(buf_orig, format="JPEG", quality=88)
+        img.save(buf_orig, format="JPEG", quality=95, subsampling=0)
         b64_orig = base64.b64encode(buf_orig.getvalue()).decode("utf-8")
 
         content_blocks = [
@@ -619,7 +806,7 @@ def process_file_with_claude(
         # View 2: Rotated 90 degrees clockwise (makes sideways receipts upright)
         img_rot = img.rotate(270, expand=True)
         buf_rot = io.BytesIO()
-        img_rot.save(buf_rot, format="JPEG", quality=88)
+        img_rot.save(buf_rot, format="JPEG", quality=95, subsampling=0)
         b64_rot = base64.b64encode(buf_rot.getvalue()).decode("utf-8")
 
         content_blocks.append({
@@ -829,17 +1016,20 @@ def main():
         st.subheader("📊 Extracted Expense Table")
 
         # Metric Summary Cards
-        total_items_val = df["Items Value"].sum() if "Items Value" in df.columns else 0.0
-        total_vat_val = df["VAT Amount"].sum() if "VAT Amount" in df.columns else 0.0
+        vat_num = pd.to_numeric(df["VAT Amount"], errors="coerce").fillna(0.0)
+        std_count = int((vat_num > 0).sum())
+        zero_count = int((vat_num <= 0).sum())
+        std_total = float(df.loc[vat_num > 0, "Total Value"].sum()) if not df.loc[vat_num > 0].empty else 0.0
+        zero_total = float(df.loc[vat_num <= 0, "Total Value"].sum()) if not df.loc[vat_num <= 0].empty else 0.0
         total_grand_val = df["Total Value"].sum() if "Total Value" in df.columns else 0.0
 
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.metric("Total Invoices", len(df))
         with m2:
-            st.metric("Total Items Value (AED)", f"{total_items_val:,.2f}")
+            st.metric("Standard-Rated (VAT > 0)", f"{std_count} invoices", f"AED {std_total:,.2f}")
         with m3:
-            st.metric("Total VAT Amount (AED)", f"{total_vat_val:,.2f}")
+            st.metric("Zero-Rated (VAT = 0)", f"{zero_count} invoices", f"AED {zero_total:,.2f}")
         with m4:
             st.metric("Grand Total (AED)", f"{total_grand_val:,.2f}")
 
@@ -870,15 +1060,16 @@ def main():
         st.subheader("📥 Export Spreadsheet")
         dl_col1, dl_col2 = st.columns(2)
 
-        # Excel Export
+        # Excel Export (Categorized into Standard-Rated and Zero-Rated)
         excel_bytes = format_excel(edited_df)
         with dl_col1:
             st.download_button(
-                label="📊 Download Excel (.xlsx)",
+                label="📊 Download Categorized Excel (.xlsx)",
                 data=excel_bytes,
                 file_name="mykloudz_Site_Expenses.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
+                help="Generates Excel sheet with separate Standard-Rated Input Tax and Zero Rated Input Tax sections."
             )
 
         # CSV Export
