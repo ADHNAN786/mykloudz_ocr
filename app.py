@@ -483,10 +483,10 @@ def format_excel(df: pd.DataFrame) -> bytes:
 def get_available_models(api_key: str) -> List[str]:
     """Dynamically fetch authorized models from Anthropic API for this key."""
     default_models = [
+        "claude-haiku-4-5-20251001",
         "claude-sonnet-4-5-20250929",
         "claude-sonnet-4-6",
         "claude-sonnet-5",
-        "claude-haiku-4-5-20251001",
     ]
     if not api_key:
         return default_models
@@ -496,10 +496,10 @@ def get_available_models(api_key: str) -> List[str]:
         fetched = [m.id for m in resp.data if hasattr(m, "id")]
         
         recommended_priority = [
+            "claude-haiku-4-5-20251001",
             "claude-sonnet-4-5-20250929",
             "claude-sonnet-4-6",
             "claude-sonnet-5",
-            "claude-haiku-4-5-20251001",
         ]
         sorted_list = []
         for pref in recommended_priority:
@@ -534,10 +534,10 @@ def process_file_with_claude(
     def _call_api_with_fallback(content_blocks, selected_model):
         models_to_try = [selected_model]
         fallbacks = [
+            "claude-haiku-4-5-20251001",
             "claude-sonnet-4-5-20250929",
             "claude-sonnet-4-6",
             "claude-sonnet-5",
-            "claude-haiku-4-5-20251001",
         ]
         for fb in fallbacks:
             if fb not in models_to_try:
@@ -552,7 +552,6 @@ def process_file_with_claude(
                         model=current_model,
                         betas=["pdfs-2024-09-25"],
                         max_tokens=4096,
-                        temperature=0,
                         system=SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": content_blocks}]
                     ), current_model
@@ -560,7 +559,6 @@ def process_file_with_claude(
                     return client.messages.create(
                         model=current_model,
                         max_tokens=4096,
-                        temperature=0,
                         system=SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": content_blocks}]
                     ), current_model
@@ -576,7 +574,7 @@ def process_file_with_claude(
 
         raise ValueError(
             f"Anthropic returned 404 (Not Found) for model '{selected_model}'. "
-            f"Available models for your account include: 'claude-sonnet-4-5-20250929' or 'claude-haiku-4-5-20251001'."
+            f"Available models for your account include: 'claude-haiku-4-5-20251001' or 'claude-sonnet-4-5-20250929'."
         ) from last_error
 
     if file_extension == "pdf":
