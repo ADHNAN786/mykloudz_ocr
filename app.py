@@ -706,29 +706,18 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Configuration")
 
-    # API Key Input (Checked from environment or Streamlit Cloud Secrets)
-    env_api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not env_api_key:
+    # Secure server-side API Key retrieval (never exposed to frontend users)
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
         try:
             if "ANTHROPIC_API_KEY" in st.secrets:
-                env_api_key = st.secrets["ANTHROPIC_API_KEY"]
+                api_key = st.secrets["ANTHROPIC_API_KEY"]
         except Exception:
             pass
-
-    api_key_input = st.sidebar.text_input(
-        "Anthropic API Key",
-        value=env_api_key,
-        type="password",
-        help="Pre-filled from .env or Streamlit Cloud Secrets if configured."
-    )
-
-    if api_key_input:
-        st.sidebar.success("API Key active", icon="🔑")
-    else:
-        st.sidebar.warning("Please enter your Anthropic API Key to proceed.", icon="⚠️")
+    api_key = (api_key or "").strip()
 
     # Fetch available models for this specific API key
-    available_models = get_available_models(api_key_input)
+    available_models = get_available_models(api_key)
     selected_model = st.sidebar.selectbox(
         "Claude Model",
         options=available_models,
@@ -810,11 +799,11 @@ def main():
 
         # Processing Loop
         if start_extraction:
-            if not api_key_input:
-                st.error("Missing Anthropic API Key. Please provide it in the sidebar or in a .env file.")
+            if not api_key:
+                st.error("⚠️ Anthropic API Key is not configured on the server. Please ensure ANTHROPIC_API_KEY is added to Streamlit Cloud Secrets or .env file.")
                 return
 
-            client = anthropic.Anthropic(api_key=api_key_input.strip())
+            client = anthropic.Anthropic(api_key=api_key)
             all_records = []
             raw_jsons = {}
             total_cache_read = 0
