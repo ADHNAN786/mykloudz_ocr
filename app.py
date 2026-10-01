@@ -483,10 +483,10 @@ def format_excel(df: pd.DataFrame) -> bytes:
 def get_available_models(api_key: str) -> List[str]:
     """Dynamically fetch authorized models from Anthropic API for this key."""
     default_models = [
-        "claude-haiku-4-5-20251001",
         "claude-sonnet-4-5-20250929",
         "claude-sonnet-4-6",
         "claude-sonnet-5",
+        "claude-haiku-4-5-20251001",
     ]
     if not api_key:
         return default_models
@@ -496,10 +496,10 @@ def get_available_models(api_key: str) -> List[str]:
         fetched = [m.id for m in resp.data if hasattr(m, "id")]
         
         recommended_priority = [
-            "claude-haiku-4-5-20251001",
             "claude-sonnet-4-5-20250929",
             "claude-sonnet-4-6",
             "claude-sonnet-5",
+            "claude-haiku-4-5-20251001",
         ]
         sorted_list = []
         for pref in recommended_priority:
@@ -534,38 +534,33 @@ def process_file_with_claude(
     def _call_api_with_fallback(content_blocks, selected_model):
         models_to_try = [selected_model]
         fallbacks = [
-            "claude-haiku-4-5-20251001",
             "claude-sonnet-4-5-20250929",
             "claude-sonnet-4-6",
             "claude-sonnet-5",
+            "claude-haiku-4-5-20251001",
         ]
         for fb in fallbacks:
             if fb not in models_to_try:
                 models_to_try.append(fb)
 
-        system_blocks = [
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"}
-            }
-        ]
-
         last_error = None
         for current_model in models_to_try:
             try:
-                try:
+                has_doc = any(b.get("type") == "document" for b in content_blocks)
+                if has_doc:
                     return client.beta.messages.create(
                         model=current_model,
-                        betas=["pdfs-2024-09-25", "prompt-caching-2024-07-31"],
+                        betas=["pdfs-2024-09-25"],
                         max_tokens=4096,
-                        system=system_blocks,
+                        temperature=0,
+                        system=SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": content_blocks}]
                     ), current_model
-                except Exception:
+                else:
                     return client.messages.create(
                         model=current_model,
                         max_tokens=4096,
+                        temperature=0,
                         system=SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": content_blocks}]
                     ), current_model
@@ -581,7 +576,7 @@ def process_file_with_claude(
 
         raise ValueError(
             f"Anthropic returned 404 (Not Found) for model '{selected_model}'. "
-            f"Available models for your account include: 'claude-haiku-4-5-20251001' or 'claude-sonnet-4-5-20250929'."
+            f"Available models for your account include: 'claude-sonnet-4-5-20250929' or 'claude-haiku-4-5-20251001'."
         ) from last_error
 
     if file_extension == "pdf":
@@ -680,17 +675,7 @@ def process_file_with_claude(
             standardized = standardize_invoice_record(item, running_idx, file_name)
             invoice_rows.append(standardized)
 
-    # Extract prompt caching usage statistics
-    usage_info = getattr(response, "usage", None)
-    cache_read = getattr(usage_info, "cache_read_input_tokens", 0) or 0
-    cache_created = getattr(usage_info, "cache_creation_input_tokens", 0) or 0
-    cache_stats = {
-        "cache_read": cache_read,
-        "cache_created": cache_created,
-        "model": used_model
-    }
-
-    return invoice_rows, parsed_json, cache_stats
+    return invoice_rows, parsed_json
 
 
 # --- Application UI ---
@@ -762,8 +747,6 @@ def main():
         st.session_state.extracted_df = None
     if "raw_json_results" not in st.session_state:
         st.session_state.raw_json_results = {}
-    if "cache_stats" not in st.session_state:
-        st.session_state.cache_stats = {"cache_read": 0, "cache_created": 0}
 
     # File Uploader (Accepts multi-image and multi-pdf upload)
     uploaded_files = st.file_uploader(
@@ -794,7 +777,6 @@ def main():
                 if st.button("🧹 Clear Table", use_container_width=False):
                     st.session_state.extracted_df = None
                     st.session_state.raw_json_results = {}
-                    st.session_state.cache_stats = {"cache_read": 0, "cache_created": 0}
                     st.rerun()
 
         # Processing Loop
@@ -806,8 +788,6 @@ def main():
             client = anthropic.Anthropic(api_key=api_key)
             all_records = []
             raw_jsons = {}
-            total_cache_read = 0
-            total_cache_created = 0
 
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -820,7 +800,7 @@ def main():
                 status_text.markdown(f"⏳ **Processing ({i + 1}/{len(uploaded_files)}):** `{file_name}`...")
                 
                 try:
-                    records, raw_json, cache_stats = process_file_with_claude(
+                    records, raw_json = process_file_with_claude(
                         client=client,
                         file_bytes=file_bytes,
                         file_name=file_name,
@@ -831,8 +811,6 @@ def main():
                     )
                     all_records.extend(records)
                     raw_jsons[file_name] = raw_json
-                    total_cache_read += cache_stats.get("cache_read", 0)
-                    total_cache_created += cache_stats.get("cache_created", 0)
                 except Exception as e:
                     st.error(f"❌ Error processing `{file_name}`: {str(e)}")
 
@@ -843,10 +821,6 @@ def main():
             if all_records:
                 st.session_state.extracted_df = pd.DataFrame(all_records)
                 st.session_state.raw_json_results = raw_jsons
-                st.session_state.cache_stats = {
-                    "cache_read": total_cache_read,
-                    "cache_created": total_cache_created
-                }
             else:
                 st.warning("No invoices could be extracted from the uploaded file(s).")
 
@@ -870,21 +844,6 @@ def main():
             st.metric("Total VAT Amount (AED)", f"{total_vat_val:,.2f}")
         with m4:
             st.metric("Grand Total (AED)", f"{total_grand_val:,.2f}")
-
-        # Prompt Caching Savings Notice
-        c_stats = st.session_state.get("cache_stats", {})
-        read_tokens = c_stats.get("cache_read", 0)
-        created_tokens = c_stats.get("cache_created", 0)
-        if read_tokens > 0:
-            st.success(
-                f"⚡ **Prompt Caching Active**: Successfully reused **{read_tokens:,}** cached prompt tokens (90% discount applied)! "
-                f"*(Cache created: {created_tokens:,} tokens)*"
-            )
-        elif created_tokens > 0:
-            st.info(
-                f"⚡ **Prompt Cache Initialized**: Cached **{created_tokens:,}** prompt tokens. "
-                f"Subsequent extractions within 5 minutes will receive a 90% prompt cost discount!"
-            )
 
         st.caption("✏️ **Live Editable**: You can edit or adjust any cell in the table below before downloading:")
 
