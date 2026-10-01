@@ -159,6 +159,77 @@ CRITICAL EXTRACTION RULES:
 10. Total Value:
    - Grand total payable including VAT.
 
+UAE TAX INVOICE & EXPENSE EXTRACTION GUIDELINES & FEW-SHOT EXAMPLES:
+
+Case 1: Commercial Supplies Invoice (e.g. Party Time Trading LLC)
+- Document Title: TAX INVOICE
+- Seller TRN: 100018902500003
+- Invoice Number: 32160
+- Date: 01/05/2026
+- Line items: BALLOONS 12" 100 PCS PACK BL 2.8 G PASTEL PURPLE\nBALLOONS 12" 100 PCS PACK BL 2.8 G BABY PINK...
+- Taxable Amount (Items Value): 137.00
+- VAT 5% (VAT Amount): 6.85
+- Grand Total (Total Value): 143.85
+
+Case 2: Money Exchange / WPS Salary Receipt (e.g. Al Ansari Exchange)
+- Document Title: WPS - SIF CREATION RECEIPT
+- Seller TRN: 100032997700003
+- Invoice Number: Must be extracted from 'Tax invoice No.' near CASH stamp (e.g. 126535607442), NOT Txn No!
+- Date: 15/05/2026
+- Description: Strictly 'WPS - SIF CREATION RECEIPT'
+- Items Value: Total Charges only (e.g. 30.00), excluding salary amount (e.g. 2,700.00)
+- VAT Amount: 1.50
+- Total Value: 31.50 (Charges + VAT)
+- Remarks: 'Salary Period: APR 2026'
+
+Case 3: Retail Thermal Receipt (e.g. ZSH Golden Day Hypermarket LLC)
+- Document Title: TAX INVOICE (Thermal)
+- Seller TRN: 104995981800003
+- Invoice Number: From Bill# 154 or Tax Invoice No, NOT barcode 7806723193813
+- Date: 25/07/2026
+- Description: PAPER CUPS HD 6.5OZ 50S
+- Items Value: 7.61
+- VAT Amount: 0.38
+- Total Value: 7.99
+- Remarks: 'Bill Amount: 7.99'
+
+Case 4: Payment Voucher / Unnumbered Receipt (e.g. Alaa Mustafa Restaurant)
+- Document Title: PAYMENT VOUCHER
+- Seller TRN: 'NA' (if no TRN printed)
+- Invoice Number: 'NA' (if no bill or invoice number printed)
+- Date: 28/07/2026
+- Description: 2025 August 23 16 Packs - 18 Aed x 16 - 288 Aed\n2025 August 29 13 Packs - 18 Aed x 13 - 234 Aed
+- Items Value: 522.00
+- VAT Amount: 0.00
+- Total Value: 522.00
+- Remarks: 'Payment Voucher - Cash payment to Playpoint'
+
+Case 5: Bookshop / Stationery Invoice (e.g. Dar Al Foqahaa Bookshop LLC)
+- Document Title: Tax Invoice
+- Seller TRN: 100026130300003
+- Invoice Number: DR055515
+- Date: 03/05/2026
+- Description: FIS/CHART PAPER-(70X100)ASSORT-COLORS-180GSM\nDELIGLUE STICK WHITE 36G
+- Items Value: 46.19
+- VAT Amount: 2.31
+- Total Value: 48.50
+
+Case 6: Department Store / Supermarket (e.g. Department Store LLC / Shopee)
+- Document Title: Tax Invoice
+- Seller TRN: 100613821600003
+- Invoice Number: 2178682
+- Date: 12/05/2026
+- Description: OREO BISCUITS 12X3\nDETTOL 3X FLOOR CL\n*SHOPPING BAG*
+- Items Value: 20.22
+- VAT Amount: 1.01
+- Total Value: 21.25
+
+GENERAL EXTRACTION STANDARDS:
+- Standardize all dates to DD/MM/YYYY.
+- Keep numbers as clean floating point or integer decimals without currency signs.
+- Ensure description concatenates all item names with newline characters.
+- Never output markdown fences (no ```json or ```).
+
 RETURN FORMAT:
 Return a STRICT JSON list of invoice objects. Do NOT use markdown code blocks (no ```json or ```). Start immediately with [ and end with ].
 Example output:
@@ -466,27 +537,26 @@ def process_file_with_claude(
             if fb not in models_to_try:
                 models_to_try.append(fb)
 
+        system_blocks = [
+            {
+                "type": "text",
+                "text": SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
+
         last_error = None
         for current_model in models_to_try:
             try:
-                has_doc = any(b.get("type") == "document" for b in content_blocks)
-                if has_doc:
-                    try:
-                        return client.beta.messages.create(
-                            model=current_model,
-                            betas=["pdfs-2024-09-25"],
-                            max_tokens=4096,
-                            system=SYSTEM_PROMPT,
-                            messages=[{"role": "user", "content": content_blocks}]
-                        ), current_model
-                    except Exception:
-                        return client.messages.create(
-                            model=current_model,
-                            max_tokens=4096,
-                            system=SYSTEM_PROMPT,
-                            messages=[{"role": "user", "content": content_blocks}]
-                        ), current_model
-                else:
+                try:
+                    return client.beta.messages.create(
+                        model=current_model,
+                        betas=["pdfs-2024-09-25", "prompt-caching-2024-07-31"],
+                        max_tokens=4096,
+                        system=system_blocks,
+                        messages=[{"role": "user", "content": content_blocks}]
+                    ), current_model
+                except Exception:
                     return client.messages.create(
                         model=current_model,
                         max_tokens=4096,
@@ -604,7 +674,17 @@ def process_file_with_claude(
             standardized = standardize_invoice_record(item, running_idx, file_name)
             invoice_rows.append(standardized)
 
-    return invoice_rows, parsed_json
+    # Extract prompt caching usage statistics
+    usage_info = getattr(response, "usage", None)
+    cache_read = getattr(usage_info, "cache_read_input_tokens", 0) or 0
+    cache_created = getattr(usage_info, "cache_creation_input_tokens", 0) or 0
+    cache_stats = {
+        "cache_read": cache_read,
+        "cache_created": cache_created,
+        "model": used_model
+    }
+
+    return invoice_rows, parsed_json, cache_stats
 
 
 # --- Application UI ---
@@ -687,6 +767,8 @@ def main():
         st.session_state.extracted_df = None
     if "raw_json_results" not in st.session_state:
         st.session_state.raw_json_results = {}
+    if "cache_stats" not in st.session_state:
+        st.session_state.cache_stats = {"cache_read": 0, "cache_created": 0}
 
     # File Uploader (Accepts multi-image and multi-pdf upload)
     uploaded_files = st.file_uploader(
@@ -717,6 +799,7 @@ def main():
                 if st.button("🧹 Clear Table", use_container_width=False):
                     st.session_state.extracted_df = None
                     st.session_state.raw_json_results = {}
+                    st.session_state.cache_stats = {"cache_read": 0, "cache_created": 0}
                     st.rerun()
 
         # Processing Loop
@@ -728,6 +811,8 @@ def main():
             client = anthropic.Anthropic(api_key=api_key_input.strip())
             all_records = []
             raw_jsons = {}
+            total_cache_read = 0
+            total_cache_created = 0
 
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -740,7 +825,7 @@ def main():
                 status_text.markdown(f"⏳ **Processing ({i + 1}/{len(uploaded_files)}):** `{file_name}`...")
                 
                 try:
-                    records, raw_json = process_file_with_claude(
+                    records, raw_json, cache_stats = process_file_with_claude(
                         client=client,
                         file_bytes=file_bytes,
                         file_name=file_name,
@@ -751,6 +836,8 @@ def main():
                     )
                     all_records.extend(records)
                     raw_jsons[file_name] = raw_json
+                    total_cache_read += cache_stats.get("cache_read", 0)
+                    total_cache_created += cache_stats.get("cache_created", 0)
                 except Exception as e:
                     st.error(f"❌ Error processing `{file_name}`: {str(e)}")
 
@@ -761,6 +848,10 @@ def main():
             if all_records:
                 st.session_state.extracted_df = pd.DataFrame(all_records)
                 st.session_state.raw_json_results = raw_jsons
+                st.session_state.cache_stats = {
+                    "cache_read": total_cache_read,
+                    "cache_created": total_cache_created
+                }
             else:
                 st.warning("No invoices could be extracted from the uploaded file(s).")
 
@@ -784,6 +875,21 @@ def main():
             st.metric("Total VAT Amount (AED)", f"{total_vat_val:,.2f}")
         with m4:
             st.metric("Grand Total (AED)", f"{total_grand_val:,.2f}")
+
+        # Prompt Caching Savings Notice
+        c_stats = st.session_state.get("cache_stats", {})
+        read_tokens = c_stats.get("cache_read", 0)
+        created_tokens = c_stats.get("cache_created", 0)
+        if read_tokens > 0:
+            st.success(
+                f"⚡ **Prompt Caching Active**: Successfully reused **{read_tokens:,}** cached prompt tokens (90% discount applied)! "
+                f"*(Cache created: {created_tokens:,} tokens)*"
+            )
+        elif created_tokens > 0:
+            st.info(
+                f"⚡ **Prompt Cache Initialized**: Cached **{created_tokens:,}** prompt tokens. "
+                f"Subsequent extractions within 5 minutes will receive a 90% prompt cost discount!"
+            )
 
         st.caption("✏️ **Live Editable**: You can edit or adjust any cell in the table below before downloading:")
 
