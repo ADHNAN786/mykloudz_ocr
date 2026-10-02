@@ -121,11 +121,11 @@ CRITICAL EXTRACTION RULES:
    - You MUST extract EVERY individual receipt/voucher as a separate object in the list. Do not duplicate.
 
 2. Company Name:
-   - Extract the SELLER / VENDOR / ISSUING BUSINESS NAME (typically at the very top, logo, or header, e.g. 'ZSH GOLDEN DAY', 'ALAA MUSTAFA RESTAURANT', 'AL ANSARI EXCHANGE', 'SANDERSONS RESTAURANT LLC').
+   - Extract the SELLER / VENDOR / ISSUING BUSINESS NAME (typically at the very top, logo, or header, e.g. 'Grandiose Supermarket Sole Proprietorship LLC', 'ZSH GOLDEN DAY', 'ALAA MUSTAFA RESTAURANT', 'AL ANSARI EXCHANGE', 'SANDERSONS RESTAURANT LLC').
    - DO NOT extract the buyer/customer (ignore 'Bill To', 'Delivered To', 'Customer', 'Payee Name: Playpoint', 'Cash Customer').
 
 3. TRN (Tax Registration Number) - EXACT 15 DIGITS REQUIRED:
-   - In the UAE, the Tax Registration Number is ALWAYS exactly 15 numeric digits (e.g. 100032997700003, 104995981800003, 100584651200003, 100018902500003).
+   - In the UAE, the Tax Registration Number is ALWAYS exactly 15 numeric digits (e.g. 100296457300003, 100032997700003, 104995981800003, 100584651200003, 100018902500003).
    - Look for 'TRN', 'TRN Number', 'Tax Reg No', or 'الرقم الضريبي'.
    - CAREFULLY count and transcribe all 15 digits. NEVER omit, skip, or drop digits in the middle.
    - For Al Ansari Exchange: Look at top left 'Tax Reg. No.: 100032997700003'. Do NOT take Till or A/C numbers.
@@ -134,52 +134,43 @@ CRITICAL EXTRACTION RULES:
 4. INVOICE NUMBER RULES (VERY STRICT):
    - ONLY extract an invoice number if it is explicitly labeled with:
      'Bill#', 'Bill No', 'Tax Invoice No', 'Tax Invoice Number', 'Invoice #', 'Invoice No', 'Inv#', 'Slip No', 'Voucher No', 'Receipt No'.
-   - Examples of valid numbers: 'Bill# 154', 'Tax invoice No.: 126535607442', 'Tax Invoice No: 00110000000001187620', 'Invoice # 32160', 'DR055515', '006'.
+   - Examples of valid numbers: 'Q0000ZSC0200019Z047', 'Bill# 154', 'Tax invoice No.: 126535607442', 'Tax Invoice No: 00110000000001187620', 'Invoice # 32160', 'DR055515', '006'.
    - NEVER extract random numbers printed below product barcodes (e.g., 7806723193813, 6295120042052, or item EAN/UPC codes) as the invoice number!
    - NEVER extract Till numbers, M# numbers, Clerk numbers, or phone numbers.
    - If no explicit bill, invoice, or voucher number exists on the document (e.g., payment voucher without a number), you MUST set 'invoice_number': 'NA'.
 
 5. Invoice Date - TRANSACTION DATE ONLY:
    - Extract the primary transaction / issue date printed on the invoice header or cash register receipt.
-   - NEVER confuse the document issue date with text dates written in line item descriptions (e.g. if item description says '2025 August 23', but receipt was issued on '27/05/2026', the invoice date is 27/05/2026).
-   - Inspect day, month, and year digits closely (do NOT misread '27/05' as '28/09').
-   - Format strictly as DD/MM/YYYY (e.g., '27/05/2026', '15/05/2026', '25/07/2026').
+   - NEVER confuse the document issue date with text dates written in line item descriptions (e.g. if item description says '2025 August 23', but receipt was issued on '18/07/2026', the invoice date is 18/07/2026).
+   - Inspect day, month, and year digits closely (do NOT misread '18/07' or '27/05').
+   - Format strictly as DD/MM/YYYY (e.g., '18/07/2026', '27/05/2026', '15/05/2026', '25/07/2026').
 
-6. Description & Items Value FOR WPS / SIF / SALARY PAYMENT RECEIPTS (e.g. Al Ansari Exchange):
-   - When the receipt is for WPS / SIF salary processing ('WPS - SIF CREATION RECEIPT' or similar):
-     * Description: Set description strictly to 'WPS - SIF CREATION RECEIPT'.
-     * Items Value: Enter ONLY the service fee / total charges incurred by the company (e.g. 'Total Charges: 30.00' representing SIF creation charges + payroll charges). DO NOT enter the disbursed salary amount (e.g., ignore the 2,700.00 salary)!
-     * VAT Amount: Enter the VAT on charges (e.g. 'VAT @5%: 1.50').
-     * Total Value: Enter the total charges plus VAT (e.g. 30.00 + 1.50 = 31.50).
-     * Remarks: Leave empty ("").
-
-7. Description for Normal Invoices / Receipts / Vouchers:
+6. Description:
    - Extract all line item names/descriptions and join them with newline characters ('\\n') into a single text.
 
-8. Items Value (Taxable Amount):
-   - Subtotal / gross taxable amount before VAT. Must be clean numeric float.
+7. VAT ('vat') and Grand Total ('grand_total') - CORE FINANCIAL VALUES:
+   - You ONLY need to accurately capture TWO numbers from each bill:
+     * 'vat': The total VAT amount in AED printed on the invoice. If 0, zero-rated, or exempt, return 0.
+     * 'grand_total': The final total payable amount in AED (inclusive of VAT).
+   - DO NOT calculate taxable value or non-taxable value — the system computes them automatically using exact formulas:
+     taxable Value = vat / 5%
+     Non-taxable value = grand_total - taxable Value - vat
 
-9. VAT Amount:
-   - Total VAT amount. If 0 or exempt, return 0.
-
-10. Total Value:
-   - Grand total payable including VAT.
-
-11. Remarks:
-   - Always return as an empty string (""). This column is kept empty for manual entry/updation by the user.
+8. Description & Values for WPS / SIF / Salary Processing (e.g. Al Ansari Exchange):
+   - Description: Set description strictly to 'WPS - SIF CREATION RECEIPT'.
+   - 'vat': Enter the VAT on service charges (e.g. 1.50).
+   - 'grand_total': Enter ONLY the company service fee charges + VAT (e.g. 30.00 charges + 1.50 VAT = 31.50). DO NOT enter the disbursed employee salary (e.g. ignore 2,700.00 salary)!
 
 UAE TAX INVOICE & EXPENSE EXTRACTION GUIDELINES & FEW-SHOT EXAMPLES:
 
-Case 1: Commercial Supplies Invoice (e.g. Party Time Trading LLC)
+Case 1: Supermarket / Mixed-Tax Invoice (e.g. Grandiose Supermarket Sole Proprietorship LLC)
 - Document Title: TAX INVOICE
-- Seller TRN: 100018902500003
-- Invoice Number: 32160
-- Date: 01/05/2026
-- Line items: BALLOONS 12" 100 PCS PACK BL 2.8 G PASTEL PURPLE\nBALLOONS 12" 100 PCS PACK BL 2.8 G BABY PINK...
-- Taxable Amount (Items Value): 137.00
-- VAT 5% (VAT Amount): 6.85
-- Grand Total (Total Value): 143.85
-- Remarks: ""
+- Seller TRN: 100296457300003
+- Invoice Number: Q0000ZSC0200019Z047
+- Date: 18/07/2026
+- Description: Masafi Tissue White 150 Sheets 2Ply
+- VAT (vat): 5.00
+- Grand Total (grand_total): 155.00
 
 Case 2: Money Exchange / WPS Salary Receipt (e.g. Al Ansari Exchange)
 - Document Title: WPS - SIF CREATION RECEIPT
@@ -187,10 +178,8 @@ Case 2: Money Exchange / WPS Salary Receipt (e.g. Al Ansari Exchange)
 - Invoice Number: Must be extracted from 'Tax invoice No.' near CASH stamp (e.g. 126535607442), NOT Txn No!
 - Date: 15/05/2026
 - Description: Strictly 'WPS - SIF CREATION RECEIPT'
-- Items Value: Total Charges only (e.g. 30.00), excluding salary amount (e.g. 2,700.00)
-- VAT Amount: 1.50
-- Total Value: 31.50 (Charges + VAT)
-- Remarks: ""
+- VAT (vat): 1.50
+- Grand Total (grand_total): 31.50
 
 Case 3: Retail Thermal Receipt (e.g. ZSH Golden Day Hypermarket LLC)
 - Document Title: TAX INVOICE (Thermal)
@@ -198,21 +187,17 @@ Case 3: Retail Thermal Receipt (e.g. ZSH Golden Day Hypermarket LLC)
 - Invoice Number: From Bill# 154 or Tax Invoice No, NOT barcode 7806723193813
 - Date: 25/07/2026
 - Description: PAPER CUPS HD 6.5OZ 50S
-- Items Value: 7.61
-- VAT Amount: 0.38
-- Total Value: 7.99
-- Remarks: ""
+- VAT (vat): 0.38
+- Grand Total (grand_total): 7.99
 
-Case 4: Payment Voucher / Unnumbered Receipt (e.g. Alaa Mustafa Restaurant)
+Case 4: Payment Voucher / Zero-Rated Receipt (e.g. Alaa Mustafa Restaurant)
 - Document Title: PAYMENT VOUCHER
 - Seller TRN: 'NA' (if no TRN printed)
 - Invoice Number: 'NA' (if no bill or invoice number printed)
 - Date: 28/07/2026
 - Description: 2025 August 23 16 Packs - 18 Aed x 16 - 288 Aed\n2025 August 29 13 Packs - 18 Aed x 13 - 234 Aed
-- Items Value: 522.00
-- VAT Amount: 0.00
-- Total Value: 522.00
-- Remarks: ""
+- VAT (vat): 0.00
+- Grand Total (grand_total): 522.00
 
 Case 5: Bookshop / Stationery Invoice (e.g. Dar Al Foqahaa Bookshop LLC)
 - Document Title: Tax Invoice
@@ -220,21 +205,8 @@ Case 5: Bookshop / Stationery Invoice (e.g. Dar Al Foqahaa Bookshop LLC)
 - Invoice Number: DR055515
 - Date: 03/05/2026
 - Description: FIS/CHART PAPER-(70X100)ASSORT-COLORS-180GSM\nDELIGLUE STICK WHITE 36G
-- Items Value: 46.19
-- VAT Amount: 2.31
-- Total Value: 48.50
-- Remarks: ""
-
-Case 6: Department Store / Supermarket (e.g. Department Store LLC / Shopee)
-- Document Title: Tax Invoice
-- Seller TRN: 100613821600003
-- Invoice Number: 2178682
-- Date: 12/05/2026
-- Description: OREO BISCUITS 12X3\nDETTOL 3X FLOOR CL\n*SHOPPING BAG*
-- Items Value: 20.22
-- VAT Amount: 1.01
-- Total Value: 21.25
-- Remarks: ""
+- VAT (vat): 2.31
+- Grand Total (grand_total): 48.50
 
 GENERAL EXTRACTION STANDARDS:
 - Standardize all dates to DD/MM/YYYY.
@@ -247,15 +219,13 @@ Return a STRICT JSON list of invoice objects. Do NOT use markdown code blocks (n
 Example output:
 [
   {
-    "invoice_date": "25/07/2026",
-    "invoice_number": "154",
-    "trn": "104995981800003",
-    "company_name": "ZSH GOLDEN DAY HYPERMARKET LLC",
-    "description": "PAPER CUPS HD 6.5OZ 50S",
-    "vat_amount": 0.38,
-    "items_value": 7.61,
-    "total_value": 7.99,
-    "remarks": ""
+    "invoice_date": "18/07/2026",
+    "invoice_number": "Q0000ZSC0200019Z047",
+    "trn": "100296457300003",
+    "company_name": "Grandiose Supermarket Sole Proprietorship LLC",
+    "description": "Masafi Tissue White 150 Sheets 2Ply",
+    "vat": 5.0,
+    "grand_total": 155.0
   }
 ]
 """
@@ -342,32 +312,27 @@ def standardize_invoice_record(inv: dict, idx: int, filename: str) -> dict:
     else:
         clean_desc = str(desc).strip()
 
-    # 6. VAT Amount
-    vat = inv.get("vat_amount") if inv.get("vat_amount") is not None else inv.get("vat")
+    # 6. VAT Amount (vat)
+    vat = inv.get("vat") if inv.get("vat") is not None else inv.get("vat_amount")
     vat_val = 0.0
     try:
         vat_val = float(str(vat).replace(",", "").replace("AED", "").strip())
     except Exception:
         vat_val = 0.0
 
-    # 7. Total Value
-    tot = inv.get("total_value") if inv.get("total_value") is not None else (inv.get("grand_total") or inv.get("total"))
-    tot_val = 0.0
+    # 7. Grand Total (grand_total)
+    tot = inv.get("grand_total") if inv.get("grand_total") is not None else (inv.get("total_value") or inv.get("total"))
+    grand_total_val = 0.0
     try:
-        tot_val = float(str(tot).replace(",", "").replace("AED", "").strip())
+        grand_total_val = float(str(tot).replace(",", "").replace("AED", "").strip())
     except Exception:
-        tot_val = 0.0
+        grand_total_val = 0.0
 
-    # 8. Items Value
-    items_val_raw = inv.get("items_value") if inv.get("items_value") is not None else (inv.get("taxable_amount") or inv.get("subtotal") or inv.get("total_charges"))
-    items_val = 0.0
-    try:
-        items_val = float(str(items_val_raw).replace(",", "").replace("AED", "").strip())
-    except Exception:
-        items_val = round(tot_val - vat_val, 2)
-
-    # 9. Remarks (Always kept empty for manual entry/updation)
-    remarks = ""
+    # 8. Derived Taxable & Non-taxable values based on manager's exact formulas:
+    # taxable Value = vat / 5% (i.e. vat / 0.05)
+    # Non-taxable value = Grand total - taxable Value - vat
+    taxable_val = round(vat_val / 0.05, 2) if vat_val > 0 else 0.0
+    non_taxable_val = max(0.0, round(grand_total_val - taxable_val - vat_val, 2))
 
     # --- SPECIAL POST-PROCESSING FOR AL ANSARI EXCHANGE / WPS RECEIPTS ---
     is_wps = (
@@ -384,14 +349,17 @@ def standardize_invoice_record(inv: dict, idx: int, filename: str) -> dict:
         charges_raw = inv.get("total_charges") or inv.get("charges") or inv.get("service_fee")
         if charges_raw:
             try:
-                items_val = float(str(charges_raw).replace(",", "").replace("AED", "").strip())
-                tot_val = round(items_val + vat_val, 2)
+                chg = float(str(charges_raw).replace(",", "").replace("AED", "").strip())
+                grand_total_val = round(chg + vat_val, 2)
             except Exception:
                 pass
-        elif items_val > 500 and 0 < vat_val < 20:
+        elif grand_total_val > 500 and 0 < vat_val < 20:
             # At 5% VAT in UAE: Total Charges = VAT / 0.05
-            items_val = round(vat_val / 0.05, 2)
-            tot_val = round(items_val + vat_val, 2)
+            chg = round(vat_val / 0.05, 2)
+            grand_total_val = round(chg + vat_val, 2)
+
+        taxable_val = round(vat_val / 0.05, 2) if vat_val > 0 else 0.0
+        non_taxable_val = max(0.0, round(grand_total_val - taxable_val - vat_val, 2))
 
     if is_al_ansari and (clean_trn == "NA" or len(clean_trn) != 15):
         clean_trn = "100032997700003"
@@ -403,18 +371,30 @@ def standardize_invoice_record(inv: dict, idx: int, filename: str) -> dict:
         "TRN": clean_trn,
         "Company Name": company,
         "Description": clean_desc,
-        "VAT Amount": round(vat_val, 2),
-        "Items Value": round(items_val, 2),
-        "Total Value": round(tot_val, 2),
+        "taxable Value": taxable_val,
+        "Vat": round(vat_val, 2),
+        "Non-taxable value": non_taxable_val,
+        "Grand total": round(grand_total_val, 2),
         "remarks": "",
         "Source File": filename
     }
 
 
 def format_excel(df: pd.DataFrame) -> bytes:
-    """Generate cleanly formatted Excel (.xlsx) file with two distinct sections:
-    1. Standard-Rated Input Tax (VAT Amount > 0)
-    2. Zero Rated Input Tax (VAT Amount == 0)
+    """Generate cleanly formatted Excel (.xlsx) file as a single continuous table:
+    Columns:
+    A: S.No
+    B: Invoice Date
+    C: Invoice Number
+    D: TRN
+    E: Company Name
+    F: Description
+    G: taxable Value (Formula: =+H{r}/5%)
+    H: Vat (Numeric value)
+    I: Non-taxable value (Formula: =+J{r}-G{r}-H{r})
+    J: Grand total (Numeric value)
+    K: remarks
+    L: Source File
     """
     output = io.BytesIO()
     wb = openpyxl.Workbook()
@@ -422,15 +402,12 @@ def format_excel(df: pd.DataFrame) -> bytes:
     ws.title = "mykloudz Expenses"
 
     # Styling definitions
-    section_std_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")  # Dark Slate
-    section_zero_fill = PatternFill(start_color="334155", end_color="334155", fill_type="solid") # Slate
-    header_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")       # Light Slate/Gray
-    subtotal_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")  # Dark Slate Blue
+    total_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
 
-    section_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    header_font = Font(name="Calibri", size=10, bold=True, color="1E293B")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     regular_font = Font(name="Calibri", size=10, color="000000")
-    subtotal_font = Font(name="Calibri", size=10, bold=True, color="1E293B")
+    total_font = Font(name="Calibri", size=11, bold=True, color="1E293B")
 
     thin_border = Border(
         left=Side(style="thin", color="CBD5E1"),
@@ -438,7 +415,7 @@ def format_excel(df: pd.DataFrame) -> bytes:
         top=Side(style="thin", color="CBD5E1"),
         bottom=Side(style="thin", color="CBD5E1")
     )
-    subtotal_border = Border(
+    total_border = Border(
         left=Side(style="thin", color="CBD5E1"),
         right=Side(style="thin", color="CBD5E1"),
         top=Side(style="thin", color="1E293B"),
@@ -448,7 +425,6 @@ def format_excel(df: pd.DataFrame) -> bytes:
     center_align = Alignment(horizontal="center", vertical="center")
     left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
     right_align = Alignment(horizontal="right", vertical="center")
-    section_align = Alignment(horizontal="left", vertical="center", indent=1)
 
     display_cols = [
         "S.No",
@@ -457,206 +433,178 @@ def format_excel(df: pd.DataFrame) -> bytes:
         "TRN",
         "Company Name",
         "Description",
-        "VAT Amount",
-        "Items Value",
-        "Total Value",
+        "taxable Value",
+        "Vat",
+        "Non-taxable value",
+        "Grand total",
         "remarks",
         "Source File",
     ]
 
-    # Ensure all columns exist in df
-    clean_df = df.copy()
+    # Ensure all columns exist in clean_df
+    clean_df = df.copy() if df is not None and not df.empty else pd.DataFrame(columns=display_cols)
     for col in display_cols:
         if col not in clean_df.columns:
             clean_df[col] = ""
 
-    # Partition by VAT Amount > 0 vs == 0
-    vat_numeric = pd.to_numeric(clean_df["VAT Amount"], errors="coerce").fillna(0.0)
-    std_df = clean_df[vat_numeric > 0].copy()
-    zero_df = clean_df[vat_numeric <= 0].copy()
-
+    # Row 1: Headers
     current_row = 1
-
-    # --- SECTION 1: Standard-Rated Input Tax ---
-    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(display_cols))
-    sec1_cell = ws.cell(row=current_row, column=1, value="Standard-Rated Input Tax")
-    sec1_cell.fill = section_std_fill
-    sec1_cell.font = section_font
-    sec1_cell.alignment = section_align
     ws.row_dimensions[current_row].height = 26
-    current_row += 1
-
-    # Column Headers for Section 1
     for col_idx, col_name in enumerate(display_cols, start=1):
         c = ws.cell(row=current_row, column=col_idx, value=col_name)
         c.fill = header_fill
         c.font = header_font
-        c.alignment = center_align
         c.border = thin_border
-    ws.row_dimensions[current_row].height = 22
-    current_row += 1
+        if col_name in ["S.No", "Invoice Date", "Invoice Number", "TRN"]:
+            c.alignment = center_align
+        elif col_name in ["taxable Value", "Vat", "Non-taxable value", "Grand total"]:
+            c.alignment = right_align
+        else:
+            c.alignment = left_align
 
-    # Data Rows for Section 1
-    std_start_row = current_row
-    if not std_df.empty:
-        for _, row in std_df.iterrows():
-            ws.row_dimensions[current_row].height = 20
-            for col_idx, col_name in enumerate(display_cols, start=1):
-                val = row.get(col_name, "")
-                c = ws.cell(row=current_row, column=col_idx, value=val)
-                c.font = regular_font
-                c.border = thin_border
-                if col_name in ["S.No", "Invoice Date", "Invoice Number"]:
-                    c.alignment = center_align
-                elif col_name == "TRN":
-                    c.alignment = center_align
-                    c.number_format = "@"
-                    if val is not None:
-                        c.value = str(val)
-                elif col_name in ["VAT Amount", "Items Value", "Total Value"]:
-                    c.alignment = right_align
-                    c.number_format = "#,##0.00"
-                    try:
-                        c.value = float(str(val).replace(",", "").strip())
-                    except Exception:
-                        pass
-                else:
-                    c.alignment = left_align
+    # Row 2 to N: Data Rows
+    current_row = 2
+    if not clean_df.empty:
+        for idx, row in clean_df.iterrows():
+            r = current_row
+            ws.row_dimensions[r].height = 22
+
+            # Col A (1): S.No
+            c_sno = ws.cell(row=r, column=1, value=idx + 1)
+            c_sno.alignment = center_align
+            c_sno.font = regular_font
+            c_sno.border = thin_border
+
+            # Col B (2): Invoice Date
+            c_date = ws.cell(row=r, column=2, value=str(row.get("Invoice Date", "")))
+            c_date.alignment = center_align
+            c_date.font = regular_font
+            c_date.border = thin_border
+
+            # Col C (3): Invoice Number
+            c_invno = ws.cell(row=r, column=3, value=str(row.get("Invoice Number", "")))
+            c_invno.alignment = center_align
+            c_invno.font = regular_font
+            c_invno.border = thin_border
+
+            # Col D (4): TRN (text format @ to prevent scientific notation)
+            trn_val = str(row.get("TRN", "") or "")
+            c_trn = ws.cell(row=r, column=4, value=trn_val)
+            c_trn.alignment = center_align
+            c_trn.font = regular_font
+            c_trn.border = thin_border
+            c_trn.number_format = "@"
+
+            # Col E (5): Company Name
+            c_comp = ws.cell(row=r, column=5, value=str(row.get("Company Name", "")))
+            c_comp.alignment = left_align
+            c_comp.font = regular_font
+            c_comp.border = thin_border
+
+            # Col F (6): Description
+            c_desc = ws.cell(row=r, column=6, value=str(row.get("Description", "")))
+            c_desc.alignment = left_align
+            c_desc.font = regular_font
+            c_desc.border = thin_border
+
+            # Col G (7): taxable Value -> EXACT FORMULA =+H{r}/5%
+            c_taxval = ws.cell(row=r, column=7, value=f"=+H{r}/5%")
+            c_taxval.alignment = right_align
+            c_taxval.font = regular_font
+            c_taxval.border = thin_border
+            c_taxval.number_format = "#,##0.00"
+
+            # Col H (8): Vat -> Numeric value
+            raw_vat = row.get("Vat", 0)
+            try:
+                vat_num = float(str(raw_vat).replace(",", "").strip())
+            except Exception:
+                vat_num = 0.0
+            c_vat = ws.cell(row=r, column=8, value=vat_num)
+            c_vat.alignment = right_align
+            c_vat.font = regular_font
+            c_vat.border = thin_border
+            c_vat.number_format = "#,##0.00"
+
+            # Col I (9): Non-taxable value -> EXACT FORMULA =+J{r}-G{r}-H{r}
+            c_nontax = ws.cell(row=r, column=9, value=f"=+J{r}-G{r}-H{r}")
+            c_nontax.alignment = right_align
+            c_nontax.font = regular_font
+            c_nontax.border = thin_border
+            c_nontax.number_format = "#,##0.00"
+
+            # Col J (10): Grand total -> Numeric value
+            raw_tot = row.get("Grand total", 0)
+            try:
+                tot_num = float(str(raw_tot).replace(",", "").strip())
+            except Exception:
+                tot_num = 0.0
+            c_gtot = ws.cell(row=r, column=10, value=tot_num)
+            c_gtot.alignment = right_align
+            c_gtot.font = regular_font
+            c_gtot.border = thin_border
+            c_gtot.number_format = "#,##0.00"
+
+            # Col K (11): remarks (empty for manual updation)
+            c_rem = ws.cell(row=r, column=11, value=str(row.get("remarks", "")))
+            c_rem.alignment = left_align
+            c_rem.font = regular_font
+            c_rem.border = thin_border
+
+            # Col L (12): Source File
+            c_src = ws.cell(row=r, column=12, value=str(row.get("Source File", "")))
+            c_src.alignment = left_align
+            c_src.font = regular_font
+            c_src.border = thin_border
+
             current_row += 1
-        std_end_row = current_row - 1
 
-        # Subtotal Row for Standard-Rated
-        ws.row_dimensions[current_row].height = 22
+        # Summary Row (TOTAL)
+        tot_row = current_row
+        ws.row_dimensions[tot_row].height = 24
         for col_idx in range(1, len(display_cols) + 1):
-            c = ws.cell(row=current_row, column=col_idx)
-            c.fill = subtotal_fill
-            c.border = subtotal_border
-            c.font = subtotal_font
+            c = ws.cell(row=tot_row, column=col_idx)
+            c.fill = total_fill
+            c.border = total_border
+            c.font = total_font
 
-        ws.cell(row=current_row, column=5, value="Total Standard-Rated").alignment = right_align
-        vat_col_letter = get_column_letter(7)
-        items_col_letter = get_column_letter(8)
-        tot_col_letter = get_column_letter(9)
+        ws.cell(row=tot_row, column=5, value="TOTAL").alignment = right_align
+        last_data_row = tot_row - 1
 
-        c_vat = ws.cell(row=current_row, column=7, value=f"=SUM({vat_col_letter}{std_start_row}:{vat_col_letter}{std_end_row})")
-        c_vat.alignment = right_align
-        c_vat.number_format = "#,##0.00"
+        # Col G (taxable Value total)
+        c_gt = ws.cell(row=tot_row, column=7, value=f"=SUM(G2:G{last_data_row})")
+        c_gt.alignment = right_align
+        c_gt.number_format = "#,##0.00"
 
-        c_items = ws.cell(row=current_row, column=8, value=f"=SUM({items_col_letter}{std_start_row}:{items_col_letter}{std_end_row})")
-        c_items.alignment = right_align
-        c_items.number_format = "#,##0.00"
+        # Col H (Vat total)
+        c_ht = ws.cell(row=tot_row, column=8, value=f"=SUM(H2:H{last_data_row})")
+        c_ht.alignment = right_align
+        c_ht.number_format = "#,##0.00"
 
-        c_tot = ws.cell(row=current_row, column=9, value=f"=SUM({tot_col_letter}{std_start_row}:{tot_col_letter}{std_end_row})")
-        c_tot.alignment = right_align
-        c_tot.number_format = "#,##0.00"
+        # Col I (Non-taxable value total)
+        c_it = ws.cell(row=tot_row, column=9, value=f"=SUM(I2:I{last_data_row})")
+        c_it.alignment = right_align
+        c_it.number_format = "#,##0.00"
 
-        current_row += 1
-    else:
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(display_cols))
-        c = ws.cell(row=current_row, column=1, value="No Standard-Rated (taxable) invoices in this batch.")
-        c.font = regular_font
-        c.alignment = center_align
-        c.border = thin_border
-        current_row += 1
-
-    # Blank Spacing Row
-    current_row += 1
-
-    # --- SECTION 2: Zero Rated Input Tax ---
-    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(display_cols))
-    sec2_cell = ws.cell(row=current_row, column=1, value="Zero Rated Input Tax")
-    sec2_cell.fill = section_zero_fill
-    sec2_cell.font = section_font
-    sec2_cell.alignment = section_align
-    ws.row_dimensions[current_row].height = 26
-    current_row += 1
-
-    # Column Headers for Section 2
-    for col_idx, col_name in enumerate(display_cols, start=1):
-        c = ws.cell(row=current_row, column=col_idx, value=col_name)
-        c.fill = header_fill
-        c.font = header_font
-        c.alignment = center_align
-        c.border = thin_border
-    ws.row_dimensions[current_row].height = 22
-    current_row += 1
-
-    # Data Rows for Section 2
-    zero_start_row = current_row
-    if not zero_df.empty:
-        for _, row in zero_df.iterrows():
-            ws.row_dimensions[current_row].height = 20
-            for col_idx, col_name in enumerate(display_cols, start=1):
-                val = row.get(col_name, "")
-                c = ws.cell(row=current_row, column=col_idx, value=val)
-                c.font = regular_font
-                c.border = thin_border
-                if col_name in ["S.No", "Invoice Date", "Invoice Number"]:
-                    c.alignment = center_align
-                elif col_name == "TRN":
-                    c.alignment = center_align
-                    c.number_format = "@"
-                    if val is not None:
-                        c.value = str(val)
-                elif col_name in ["VAT Amount", "Items Value", "Total Value"]:
-                    c.alignment = right_align
-                    c.number_format = "#,##0.00"
-                    try:
-                        c.value = float(str(val).replace(",", "").strip())
-                    except Exception:
-                        pass
-                else:
-                    c.alignment = left_align
-            current_row += 1
-        zero_end_row = current_row - 1
-
-        # Subtotal Row for Zero-Rated
-        ws.row_dimensions[current_row].height = 22
-        for col_idx in range(1, len(display_cols) + 1):
-            c = ws.cell(row=current_row, column=col_idx)
-            c.fill = subtotal_fill
-            c.border = subtotal_border
-            c.font = subtotal_font
-
-        ws.cell(row=current_row, column=5, value="Total Zero-Rated").alignment = right_align
-        vat_col_letter = get_column_letter(7)
-        items_col_letter = get_column_letter(8)
-        tot_col_letter = get_column_letter(9)
-
-        c_vat = ws.cell(row=current_row, column=7, value=f"=SUM({vat_col_letter}{zero_start_row}:{vat_col_letter}{zero_end_row})")
-        c_vat.alignment = right_align
-        c_vat.number_format = "#,##0.00"
-
-        c_items = ws.cell(row=current_row, column=8, value=f"=SUM({items_col_letter}{zero_start_row}:{items_col_letter}{zero_end_row})")
-        c_items.alignment = right_align
-        c_items.number_format = "#,##0.00"
-
-        c_tot = ws.cell(row=current_row, column=9, value=f"=SUM({tot_col_letter}{zero_start_row}:{tot_col_letter}{zero_end_row})")
-        c_tot.alignment = right_align
-        c_tot.number_format = "#,##0.00"
-
-        current_row += 1
-    else:
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(display_cols))
-        c = ws.cell(row=current_row, column=1, value="No Zero-Rated (exempt) invoices in this batch.")
-        c.font = regular_font
-        c.alignment = center_align
-        c.border = thin_border
-        current_row += 1
+        # Col J (Grand total sum)
+        c_jt = ws.cell(row=tot_row, column=10, value=f"=SUM(J2:J{last_data_row})")
+        c_jt.alignment = right_align
+        c_jt.number_format = "#,##0.00"
 
     # Column widths
     col_widths = {
         "S.No": 8,
         "Invoice Date": 14,
-        "Invoice Number": 18,
-        "TRN": 22,
-        "Company Name": 32,
+        "Invoice Number": 20,
+        "TRN": 20,
+        "Company Name": 36,
         "Description": 45,
-        "VAT Amount": 14,
-        "Items Value": 15,
-        "Total Value": 16,
+        "taxable Value": 16,
+        "Vat": 14,
+        "Non-taxable value": 18,
+        "Grand total": 16,
         "remarks": 18,
-        "Source File": 25,
+        "Source File": 24,
     }
     for col_idx, col_name in enumerate(display_cols, start=1):
         col_letter = get_column_letter(col_idx)
@@ -713,7 +661,7 @@ def process_file_with_claude(
     prompt_text = (
         "Extract all individual receipts, invoices, or payment vouchers from this document. "
         "Standardize each into the required JSON schema with company_name, trn, invoice_number, "
-        "invoice_date (DD/MM/YYYY), description (all items combined), items_value, vat_amount, and total_value."
+        "invoice_date (DD/MM/YYYY), description (all items combined), vat, and grand_total."
     )
     if custom_hint and custom_hint.strip():
         prompt_text += f"\n\nUser Extraction Guidance: {custom_hint.strip()}"
@@ -1016,22 +964,20 @@ def main():
         st.subheader("📊 Extracted Expense Table")
 
         # Metric Summary Cards
-        vat_num = pd.to_numeric(df["VAT Amount"], errors="coerce").fillna(0.0)
-        std_count = int((vat_num > 0).sum())
-        zero_count = int((vat_num <= 0).sum())
-        std_total = float(df.loc[vat_num > 0, "Total Value"].sum()) if not df.loc[vat_num > 0].empty else 0.0
-        zero_total = float(df.loc[vat_num <= 0, "Total Value"].sum()) if not df.loc[vat_num <= 0].empty else 0.0
-        total_grand_val = df["Total Value"].sum() if "Total Value" in df.columns else 0.0
+        vat_num = pd.to_numeric(df.get("Vat", 0), errors="coerce").fillna(0.0)
+        taxable_num = pd.to_numeric(df.get("taxable Value", 0), errors="coerce").fillna(0.0)
+        non_taxable_num = pd.to_numeric(df.get("Non-taxable value", 0), errors="coerce").fillna(0.0)
+        grand_total_num = pd.to_numeric(df.get("Grand total", 0), errors="coerce").fillna(0.0)
 
         m1, m2, m3, m4 = st.columns(4)
         with m1:
             st.metric("Total Invoices", len(df))
         with m2:
-            st.metric("Standard-Rated (VAT > 0)", f"{std_count} invoices", f"AED {std_total:,.2f}")
+            st.metric("Taxable Value", f"AED {taxable_num.sum():,.2f}")
         with m3:
-            st.metric("Zero-Rated (VAT = 0)", f"{zero_count} invoices", f"AED {zero_total:,.2f}")
+            st.metric("Total VAT", f"AED {vat_num.sum():,.2f}")
         with m4:
-            st.metric("Grand Total (AED)", f"{total_grand_val:,.2f}")
+            st.metric("Grand Total", f"AED {grand_total_num.sum():,.2f}")
 
         st.caption("✏️ **Live Editable**: You can edit or adjust any cell in the table below before downloading:")
 
@@ -1048,28 +994,38 @@ def main():
                 "TRN": st.column_config.TextColumn("TRN", width="medium"),
                 "Company Name": st.column_config.TextColumn("Company Name", width="large"),
                 "Description": st.column_config.TextColumn("Description", width="large"),
-                "VAT Amount": st.column_config.NumberColumn("VAT Amount", format="%.2f"),
-                "Items Value": st.column_config.NumberColumn("Items Value", format="%.2f"),
-                "Total Value": st.column_config.NumberColumn("Total Value", format="%.2f"),
+                "taxable Value": st.column_config.NumberColumn("taxable Value", format="%.2f"),
+                "Vat": st.column_config.NumberColumn("Vat", format="%.2f"),
+                "Non-taxable value": st.column_config.NumberColumn("Non-taxable value", format="%.2f"),
+                "Grand total": st.column_config.NumberColumn("Grand total", format="%.2f"),
                 "remarks": st.column_config.TextColumn("remarks", width="medium"),
                 "Source File": st.column_config.TextColumn("Source File", width="medium"),
             }
         )
 
+        # Ensure derived columns stay in sync if user edits Vat or Grand total
+        try:
+            v_s = pd.to_numeric(edited_df["Vat"], errors="coerce").fillna(0.0)
+            gt_s = pd.to_numeric(edited_df["Grand total"], errors="coerce").fillna(0.0)
+            edited_df["taxable Value"] = (v_s / 0.05).round(2)
+            edited_df["Non-taxable value"] = (gt_s - edited_df["taxable Value"] - v_s).clip(lower=0.0).round(2)
+        except Exception:
+            pass
+
         # Export Buttons
         st.subheader("📥 Export Spreadsheet")
         dl_col1, dl_col2 = st.columns(2)
 
-        # Excel Export (Categorized into Standard-Rated and Zero-Rated)
+        # Excel Export (Single continuous table with =+H{r}/5% and =+J{r}-G{r}-H{r} formulas)
         excel_bytes = format_excel(edited_df)
         with dl_col1:
             st.download_button(
-                label="📊 Download Categorized Excel (.xlsx)",
+                label="📊 Download Excel Spreadsheet (.xlsx)",
                 data=excel_bytes,
-                file_name="mykloudz_Site_Expenses.xlsx",
+                file_name="mykloudz_Expenses.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
-                help="Generates Excel sheet with separate Standard-Rated Input Tax and Zero Rated Input Tax sections."
+                help="Generates verified Excel sheet with formulas =+H2/5% and =+J2-G2-H2."
             )
 
         # CSV Export
@@ -1078,7 +1034,7 @@ def main():
             st.download_button(
                 label="📄 Download CSV (.csv)",
                 data=csv_bytes,
-                file_name="mykloudz_Site_Expenses.csv",
+                file_name="mykloudz_Expenses.csv",
                 mime="text/csv",
                 use_container_width=True,
             )
