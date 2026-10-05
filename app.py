@@ -830,7 +830,7 @@ def main():
     
     st.sidebar.caption("Intelligent UAE Invoice & Expense Engine")
     st.sidebar.markdown("---")
-    st.sidebar.header("⚙️ Configuration")
+    st.sidebar.header("Configuration")
 
     # Secure server-side API Key retrieval (never exposed to frontend users)
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
@@ -860,14 +860,13 @@ def main():
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Supported formats: **JPG, PNG, JPEG, PDF**")
-    st.sidebar.caption("💡 **Auto-Orientation**: Sideways & transverse receipts are automatically detected and straightened.")
+    st.sidebar.caption("**Auto-Orientation**: Sideways & transverse receipts are automatically detected and straightened.")
 
     # --- Main Header ---
     if os.path.exists(LOGO_PATH):
         st.markdown(
             f"""
             <div class="brand-header">
-                <img src="data:image/png;base64,{base64.b64encode(open(LOGO_PATH, 'rb').read()).decode('utf-8')}" width="190" style="vertical-align: middle;">
                 <div style="display: inline-block; vertical-align: middle;">
                     <div class="brand-title">Invoice & Expense <span>OCR</span> <span class="brand-badge">AI POWERED</span></div>
                 </div>
@@ -899,7 +898,7 @@ def main():
 
     # Display Uploaded Files Summary
     if uploaded_files:
-        st.write(f"📁 **{len(uploaded_files)} document(s) queued for extraction:**")
+        st.write(f"**{len(uploaded_files)} document(s) queued for extraction:**")
         cols = st.columns(min(len(uploaded_files), 4))
         for idx, file in enumerate(uploaded_files):
             col = cols[idx % len(cols)]
@@ -912,10 +911,10 @@ def main():
         # Action Buttons
         col_run, col_clear = st.columns([1, 4])
         with col_run:
-            start_extraction = st.button("🚀 Extract All Invoices", type="primary", use_container_width=True)
+            start_extraction = st.button("Extract All Invoices", type="primary", use_container_width=True)
         with col_clear:
             if st.session_state.extracted_df is not None:
-                if st.button("🧹 Clear Table", use_container_width=False):
+                if st.button("Clear Table", use_container_width=False):
                     st.session_state.extracted_df = None
                     st.session_state.raw_json_results = {}
                     st.rerun()
@@ -923,7 +922,7 @@ def main():
         # Processing Loop
         if start_extraction:
             if not api_key:
-                st.error("⚠️ Anthropic API Key is not configured on the server. Please ensure ANTHROPIC_API_KEY is added to Streamlit Cloud Secrets or .env file.")
+                st.error("Anthropic API Key is not configured on the server. Please ensure ANTHROPIC_API_KEY is added to Streamlit Cloud Secrets or .env file.")
                 return
 
             client = anthropic.Anthropic(api_key=api_key)
@@ -938,7 +937,7 @@ def main():
                 file_name = uploaded_file.name
                 ext = file_name.split(".")[-1].lower()
 
-                status_text.markdown(f"⏳ **Processing ({i + 1}/{len(uploaded_files)}):** `{file_name}`...")
+                status_text.markdown(f"**Processing ({i + 1}/{len(uploaded_files)}):** `{file_name}`...")
                 
                 try:
                     records, raw_json = process_file_with_claude(
@@ -953,11 +952,11 @@ def main():
                     all_records.extend(records)
                     raw_jsons[file_name] = raw_json
                 except Exception as e:
-                    st.error(f"❌ Error processing `{file_name}`: {str(e)}")
+                    st.error(f"Error processing `{file_name}`: {str(e)}")
 
                 progress_bar.progress((i + 1) / len(uploaded_files))
 
-            status_text.success("🎉 All documents extracted and verified successfully!")
+            status_text.success("All documents extracted and verified successfully!")
 
             if all_records:
                 st.session_state.extracted_df = pd.DataFrame(all_records)
@@ -969,7 +968,7 @@ def main():
     if st.session_state.extracted_df is not None and not st.session_state.extracted_df.empty:
         df = st.session_state.extracted_df
         st.markdown("---")
-        st.subheader("📊 Extracted Expense Table")
+        st.subheader("Extracted Expense Table")
 
         # Metric Summary Cards
         vat_num = pd.to_numeric(df.get("Vat", 0), errors="coerce").fillna(0.0)
@@ -987,7 +986,7 @@ def main():
         with m4:
             st.metric("Grand Total", f"AED {grand_total_num.sum():,.2f}")
 
-        st.caption("✏️ **Live Editable**: You can edit or adjust any cell in the table below before downloading:")
+        st.caption("**Live Editable**: You can edit or adjust any cell in the table below before downloading:")
 
         # Interactive Data Editor
         edited_df = st.data_editor(
@@ -1021,14 +1020,14 @@ def main():
             pass
 
         # Export Buttons
-        st.subheader("📥 Export Spreadsheet")
+        st.subheader("Export Spreadsheet")
         dl_col1, dl_col2 = st.columns(2)
 
         # Excel Export (Single continuous table with =+H{r}/5% and =+J{r}-G{r}-H{r} formulas)
         excel_bytes = format_excel(edited_df)
         with dl_col1:
             st.download_button(
-                label="📊 Download Excel Spreadsheet (.xlsx)",
+                label="Download Excel Spreadsheet (.xlsx)",
                 data=excel_bytes,
                 file_name="mykloudz_Expenses.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1040,7 +1039,7 @@ def main():
         csv_bytes = edited_df.to_csv(index=False).encode("utf-8")
         with dl_col2:
             st.download_button(
-                label="📄 Download CSV (.csv)",
+                label="Download CSV (.csv)",
                 data=csv_bytes,
                 file_name="mykloudz_Expenses.csv",
                 mime="text/csv",
@@ -1048,7 +1047,7 @@ def main():
             )
 
         # Collapsible Raw JSON Viewer
-        with st.expander("🔍 View Raw JSON from Claude"):
+        with st.expander("View Raw JSON from Claude"):
             st.json(st.session_state.raw_json_results)
 
 
