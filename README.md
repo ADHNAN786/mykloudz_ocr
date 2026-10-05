@@ -7,7 +7,7 @@ A standalone Python web application that extracts structured tabular data and li
 ## 🚀 Features
 
 - **Multi-Format Support**: Upload multiple PDFs and document images simultaneously (`.pdf`, `.png`, `.jpg`, `.jpeg`).
-- **Native PDF & Vision Support**: Leverages Claude 3.5 Sonnet's native document processing capabilities.
+- **Native PDF & Vision Support**: Leverages Claude Sonnet 5's native document processing capabilities.
 - **Automatic Data Normalization**: Intelligently flattens nested document structures (headers + line items) into tabular rows.
 - **Multi-File Provenance**: Includes `source_file` column to easily trace records back to original files.
 - **Custom Extraction Hints**: Optional prompt guidance to focus on specific fields (e.g. tax, discounts, receipt numbers).
