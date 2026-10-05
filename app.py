@@ -25,6 +25,7 @@ import anthropic
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+import auth_db
 
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "mykloudz_logo.png")
 
@@ -655,8 +656,9 @@ def process_file_with_claude(
     file_extension: str,
     model: str,
     current_index: int,
-    custom_hint: str = ""
-) -> Tuple[List[Dict[str, Any]], Any]:
+    custom_hint: str = "",
+    user_email: str = ""
+) -> Tuple[List[Dict[str, Any]], Any, Dict[str, int]]:
     """Call Claude API with multi-orientation support for images and document block for PDFs."""
     prompt_text = (
         "Extract all individual receipts, invoices, or payment vouchers from this document. "
@@ -807,6 +809,20 @@ def process_file_with_claude(
     else:
         raw_list = []
 
+    # Collect token usage from Anthropic response
+    inp_tokens = getattr(response.usage, "input_tokens", 0) if hasattr(response, "usage") else 0
+    out_tokens = getattr(response.usage, "output_tokens", 0) if hasattr(response, "usage") else 0
+    usage_info = {"input_tokens": inp_tokens, "output_tokens": out_tokens}
+
+    if user_email:
+        auth_db.log_token_usage(
+            user_email=user_email,
+            file_name=file_name,
+            model=used_model,
+            input_tokens=inp_tokens,
+            output_tokens=out_tokens
+        )
+
     # Format each invoice to match the exact Excel columns
     invoice_rows = []
     running_idx = current_index
@@ -816,12 +832,229 @@ def process_file_with_claude(
             standardized = standardize_invoice_record(item, running_idx, file_name)
             invoice_rows.append(standardized)
 
-    return invoice_rows, parsed_json
+    return invoice_rows, parsed_json, usage_info
 
 
-# --- Application UI ---
+# --- Application UI & Authentication ---
+
+def render_login_page():
+    """Render a clean, secure login interface for mykloudz OCR."""
+    if os.path.exists(LOGO_PATH):
+        st.markdown(
+            f"""
+            <div style="text-align: center; margin-top: 1.5rem; margin-bottom: 1.2rem;">
+                <img src="data:image/png;base64,{base64.b64encode(open(LOGO_PATH, 'rb').read()).decode('utf-8')}" width="210">
+                <div style="font-size: 1.8rem; font-weight: 800; color: #1E293B; margin-top: 10px;">
+                    Invoice & Expense <span style="color: #F36F21;">OCR</span>
+                </div>
+                <div style="color: #64748B; font-size: 0.95rem;">Please log in with your email and password to continue.</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            """
+            <div style="text-align: center; margin-top: 1.5rem; margin-bottom: 1.2rem;">
+                <div style="font-size: 2.1rem; font-weight: 800; color: #1E293B;">
+                    mykloudz <span style="color: #F36F21;">OCR</span>
+                </div>
+                <div style="color: #64748B; font-size: 0.95rem;">Please log in with your email and password to continue.</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    _, col2, _ = st.columns([1, 1.3, 1])
+    with col2:
+        with st.form("login_form", clear_on_submit=False):
+            email = st.text_input("Email Address", placeholder="name@mykloudz.com")
+            password = st.text_input("Password", type="password", placeholder="••••••••")
+            submit = st.form_submit_button("🔐 Sign In", type="primary", use_container_width=True)
+            
+            if submit:
+                if not email or not password:
+                    st.error("Please enter both email and password.")
+                else:
+                    user_info = auth_db.verify_user(email, password)
+                    if user_info:
+                        st.session_state.authenticated = True
+                        st.session_state.user = user_info
+                        st.rerun()
+                    else:
+                        st.error("Invalid email or password. Please verify your credentials.")
+
+        st.caption("💡 **Administrator note**: Initial default credentials are `admin@mykloudz.com` / `Admin@123`. You can add employee accounts and update passwords in the Admin Dashboard.")
+
+
+def render_admin_dashboard():
+    """Admin Dashboard for token consumption telemetry and employee management."""
+    st.markdown('<div class="brand-title">Admin <span>Token & User Dashboard</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Monitor individual employee token usage, analyze API activity, and manage login access.</div>', unsafe_allow_html=True)
+
+    # 1. Global KPI Metrics
+    stats = auth_db.get_global_token_stats()
+    k1, k2, k3, k4, k5 = st.columns(5)
+    with k1:
+        st.metric("Total Tokens Consumed", f"{stats['total_tokens']:,}")
+    with k2:
+        st.metric("Input Tokens", f"{stats['input_tokens']:,}")
+    with k3:
+        st.metric("Output Tokens", f"{stats['output_tokens']:,}")
+    with k4:
+        st.metric("Total Documents Processed", f"{stats['total_requests']:,}")
+    with k5:
+        st.metric("Registered Users", f"{stats['total_users']:,}")
+
+    st.markdown("---")
+
+    # 2. Per-User Token Consumption
+    st.subheader("👥 Individual Token Consumption Breakdown")
+    summary_df = auth_db.get_token_usage_summary()
+
+    if not summary_df.empty:
+        col_t, col_c = st.columns([3, 2])
+        with col_t:
+            st.dataframe(
+                summary_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "User Email": st.column_config.TextColumn("User Email"),
+                    "Total Requests": st.column_config.NumberColumn("OCR Requests"),
+                    "Input Tokens": st.column_config.NumberColumn("Input Tokens", format="%d"),
+                    "Output Tokens": st.column_config.NumberColumn("Output Tokens", format="%d"),
+                    "Total Tokens": st.column_config.NumberColumn("Total Tokens", format="%d"),
+                    "Last Active": st.column_config.TextColumn("Last Active"),
+                }
+            )
+        with col_c:
+            st.markdown("##### 📊 Top Token Users")
+            chart_df = summary_df.set_index("User Email")[["Input Tokens", "Output Tokens"]]
+            st.bar_chart(chart_df)
+    else:
+        st.info("No token consumption recorded yet. When users process invoices, their token stats will appear here.")
+
+    st.markdown("---")
+
+    # 3. Employee Account Management
+    st.subheader("⚙️ Employee Account Management")
+    tab_active, tab_create, tab_password, tab_delete = st.tabs([
+        "Active Accounts",
+        "➕ Add New User",
+        "🔑 Reset Password",
+        "🗑️ Delete Account"
+    ])
+
+    all_users = auth_db.get_all_users()
+    user_emails = [u["email"] for u in all_users]
+
+    with tab_active:
+        if all_users:
+            st.dataframe(
+                pd.DataFrame(all_users),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "id": st.column_config.NumberColumn("ID", width="small"),
+                    "email": st.column_config.TextColumn("Email Address"),
+                    "role": st.column_config.TextColumn("Role"),
+                    "created_at": st.column_config.TextColumn("Created Date"),
+                }
+            )
+        else:
+            st.info("No registered users found.")
+
+    with tab_create:
+        with st.form("create_user_form", clear_on_submit=True):
+            new_email = st.text_input("Employee Work Email", placeholder="employee@mykloudz.com")
+            new_pass = st.text_input("Temporary Password", type="password", placeholder="At least 6 characters")
+            new_role = st.selectbox(
+                "Role",
+                options=["user", "admin"],
+                format_func=lambda x: "Standard User (OCR access only)" if x == "user" else "Administrator (Full access + Token Analytics)",
+                index=0
+            )
+            create_btn = st.form_submit_button("➕ Create Account", type="primary")
+            if create_btn:
+                if not new_email or not new_pass:
+                    st.error("Please fill in both email and password.")
+                else:
+                    success, msg = auth_db.add_user(new_email, new_pass, new_role)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+    with tab_password:
+        with st.form("reset_pwd_form", clear_on_submit=True):
+            target_user = st.selectbox("Select User Account", options=user_emails if user_emails else ["No users"])
+            newer_pass = st.text_input("New Password", type="password", placeholder="At least 6 characters")
+            reset_btn = st.form_submit_button("Update Password")
+            if reset_btn:
+                if target_user and newer_pass:
+                    ok, msg = auth_db.update_user_password(target_user, newer_pass)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+
+    with tab_delete:
+        with st.form("del_user_form", clear_on_submit=True):
+            del_target = st.selectbox("Select User Account to Delete", options=user_emails if user_emails else ["No users"])
+            st.caption("⚠️ Deleting an account removes their login access immediately.")
+            del_btn = st.form_submit_button("Delete User", type="secondary")
+            if del_btn:
+                if del_target:
+                    ok, msg = auth_db.delete_user(del_target)
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+    st.markdown("---")
+
+    # 4. Detailed Audit Logs
+    st.subheader("📜 Granular Token Activity Log")
+    filter_opts = ["All Users"] + user_emails
+    selected_filter = st.selectbox("Filter activity logs by user:", filter_opts, index=0)
+    filter_arg = None if selected_filter == "All Users" else selected_filter
+
+    logs_df = auth_db.get_detailed_token_logs(limit=300, filter_email=filter_arg)
+    if not logs_df.empty:
+        st.dataframe(
+            logs_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Date & Time": st.column_config.TextColumn("Date & Time"),
+                "User Email": st.column_config.TextColumn("User Email"),
+                "File Name": st.column_config.TextColumn("Document"),
+                "Model": st.column_config.TextColumn("Model"),
+                "Input Tokens": st.column_config.NumberColumn("Input Tokens", format="%d"),
+                "Output Tokens": st.column_config.NumberColumn("Output Tokens", format="%d"),
+                "Total Tokens": st.column_config.NumberColumn("Total Tokens", format="%d"),
+            }
+        )
+    else:
+        st.info("No activity logs found for the selected filter.")
+
 
 def main():
+    auth_db.init_db()
+
+    # Session authentication guard
+    if "authenticated" not in st.session_state or not st.session_state.authenticated:
+        render_login_page()
+        return
+
+    curr_user = st.session_state.user
+    user_email = curr_user["email"]
+    user_role = curr_user.get("role", "user").lower()
+    user_stats = auth_db.get_user_token_stats(user_email)
+
     # --- Sidebar Configuration ---
     if os.path.exists(LOGO_PATH):
         st.sidebar.image(LOGO_PATH, width=170)
@@ -829,7 +1062,43 @@ def main():
         st.sidebar.markdown("## **mykloudz** OCR")
     
     st.sidebar.caption("Intelligent UAE Invoice & Expense Engine")
+
+    # Logged In User Profile Card
+    st.sidebar.markdown(f"""
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; margin-top: 8px; margin-bottom: 12px; border-left: 4px solid #F36F21;">
+        <div style="font-size: 0.72rem; text-transform: uppercase; color: #64748B; font-weight: 700; letter-spacing: 0.5px;">Logged In User</div>
+        <div style="font-weight: 700; color: #1E293B; font-size: 0.88rem; word-break: break-all; margin: 2px 0;">{user_email}</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+            <span style="background: {'#FEF3C7' if user_role == 'admin' else '#E0E7FF'}; color: {'#92400E' if user_role == 'admin' else '#3730A3'}; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 700;">{user_role.upper()}</span>
+            <span style="font-size: 0.8rem; color: #475569;">🪙 {user_stats['total_tokens']:,} tokens</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.sidebar.button("🚪 Log Out", use_container_width=True):
+        st.session_state.authenticated = False
+        st.session_state.user = None
+        st.session_state.extracted_df = None
+        st.session_state.raw_json_results = {}
+        st.rerun()
+
     st.sidebar.markdown("---")
+
+    # Role-based Navigation for Admins
+    if user_role == "admin":
+        app_mode = st.sidebar.radio(
+            "Navigation",
+            ["🧾 Invoice & Receipt OCR", "📊 Admin Token Analytics & Users"],
+            index=0
+        )
+        st.sidebar.markdown("---")
+    else:
+        app_mode = "🧾 Invoice & Receipt OCR"
+
+    if app_mode == "📊 Admin Token Analytics & Users":
+        render_admin_dashboard()
+        return
+
     st.sidebar.header("Configuration")
 
     # Secure server-side API Key retrieval (never exposed to frontend users)
@@ -928,6 +1197,7 @@ def main():
             client = anthropic.Anthropic(api_key=api_key)
             all_records = []
             raw_jsons = {}
+            total_batch_tokens = 0
 
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -937,26 +1207,28 @@ def main():
                 file_name = uploaded_file.name
                 ext = file_name.split(".")[-1].lower()
 
-                status_text.markdown(f"**Processing ({i + 1}/{len(uploaded_files)}):** `{file_name}`...")
+                status_text.markdown(f"⏳ **Processing ({i + 1}/{len(uploaded_files)}):** `{file_name}`...")
                 
                 try:
-                    records, raw_json = process_file_with_claude(
+                    records, raw_json, usage = process_file_with_claude(
                         client=client,
                         file_bytes=file_bytes,
                         file_name=file_name,
                         file_extension=ext,
                         model=selected_model,
                         current_index=len(all_records),
-                        custom_hint=custom_hint
+                        custom_hint=custom_hint,
+                        user_email=user_email
                     )
                     all_records.extend(records)
                     raw_jsons[file_name] = raw_json
+                    total_batch_tokens += (usage.get("input_tokens", 0) + usage.get("output_tokens", 0))
                 except Exception as e:
-                    st.error(f"Error processing `{file_name}`: {str(e)}")
+                    st.error(f"❌ Error processing `{file_name}`: {str(e)}")
 
                 progress_bar.progress((i + 1) / len(uploaded_files))
 
-            status_text.success("All documents extracted and verified successfully!")
+            status_text.success(f"🎉 All documents extracted and verified successfully! ({total_batch_tokens:,} tokens consumed)")
 
             if all_records:
                 st.session_state.extracted_df = pd.DataFrame(all_records)
